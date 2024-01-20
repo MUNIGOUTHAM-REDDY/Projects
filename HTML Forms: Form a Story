@@ -1,0 +1,82 @@
+<!-- Form a Story
+Forms are great for collecting information on users, like job applications or insightful surveys. However, we can also stretch our creative muscles and have a little fun with forms. For this project, we’ll use our knowledge of the HTML <form> and grab user input to put a spin on a classic story!
+
+The logic for parsing and inserting of user inputs is already taken care of in main.js using JavaScript . We’ve also added some styling to the page in style.css. You can find these files by click on the folder icon located at the top of the code editor and selecting the files you’re interested in.
+
+What you have to do is now make a <form> capable of collecting the correct information so that the newly crafted story makes sense! -->
+
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans" rel="stylesheet">
+    <title>Form a Story</title>
+  </head>
+  <body>
+    <section id="top">
+      <img src="https://content.codecademy.com/courses/learn-html-forms/formAStoryLogo.svg" alt="Form A Story Logo">
+    </section>
+
+    <section id="main">
+      <h1>Complete the Form -<br> Complete the Story!</h1>
+      <hr>
+      <!--Add your form below:-->
+      <form action="story.html" method="GET">
+
+        <label for="animal-1">Animal:</label>
+        <input type="text" name="animal-1" id="animal-1" required >
+        <br>
+
+        <label for="animal-2">Another Animal:</label>
+        <input type="text" name="animal-2" id="animal-2" required>
+        <br>
+
+        <label for="animal-3">One More Animal:</label>
+        <input type="text" name="animal-3" id="animal-3" required>
+        <br>
+
+        <label for="adj-1">Adjective(ends in -ed):</label>
+        <input type="text" name="adj-1" id="adj-1" required pattern=".*ed$" >
+        <br>
+
+        <label for="verb-1">Verb(ends in -ing):</label>
+        <input type="text" name="verb-1" id="verb-1" required pattern=".*ing$">
+        <br>
+
+        <label for="num-1">Number:</label>
+        <input type="number" name="num-1" id="num-1" required>
+        <br>
+        
+        <label for="answer">Fictional Story?</label>
+        <input type="radio" id="yes" name="answer" value="yes" required>
+        <span>Yes</span>
+        <input type="radio" id="no" name="answer" value="no">
+        <span>No</span>
+        <br>
+
+        <label for="speed">Relative Speed (ends in -er):</label>
+        <select id="speed" name="speed" required pattern=".*er$">
+          <option value="faster">Faster</option>
+          <option value="slower">Slower</option>
+        </select>
+        <br>
+
+        <label for="quote">Motivational Quote:</label>
+        <input type="text" name="quote" id="quote" list="quote-choices" required>
+        <datalist id="quote-choices">
+          <option value="winner gets ice cream!"></option>
+          <option value="loser needs to buy ice cream to the winner !"></option>
+        </datalist>
+        <br>
+
+        <label for="message">Meaningful Message:</label>
+        <textarea id="message" name="message" rows="8" cols="40">Determination is the Key !</textarea>
+
+
+        <input type="submit" value="Form My Story!">
+      </form>      
+    </section>
+    
+  </body>
+</html>
