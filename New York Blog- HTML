@@ -16,9 +16,9 @@ This is because of the CSS file. Don’t worry about CSS right now, it’s only 
   <body>   
     <nav>
       <ul>
-        <li>Blog <a href=""></a></li>
-        <li>Media <a href=""></a></li>
-        <li>About <a href=""></a></li>
+        <li><a href="#blog">Blog</a></li>
+        <li><a href="#media">Media</a></li>
+        <li><a href="#footer">About</a></li>
       </ul>
     </nav>
     <header>
@@ -66,7 +66,7 @@ This is because of the CSS file. Don’t worry about CSS right now, it’s only 
       </section>
     </main>
 
-    <footer>
+    <footer id="footer">
       <p>Posted by:</p>
       <p>Contact information: Blogger@NYC.com</p>
     </footer>
