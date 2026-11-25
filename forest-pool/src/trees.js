@@ -182,7 +182,7 @@ function leafTwig(limb, leaves, r, tint, { spacing = 0.034, size = 0.088, from =
     const u = (k + (r() - 0.5) * 0.9) / n;
     const t = last ? 1 : from + (1 - from) * Math.pow(clamp(u, 0, 1), 0.72);
     s = -s;
-    if (!last && r() < 0.42 - 0.3 * t) continue;            // gaps, mostly on the older wood
+    if (!last && r() < 0.3 - 0.27 * t) continue;            // gaps, mostly on the older wood
     limb.path.at(t, P); limb.path.tangent(t, T);
     side.crossVectors(T, UP);
     if (side.lengthSq() < 0.02) side.set(1, 0, 0);
@@ -262,7 +262,7 @@ function barkMaterial(name, { tint = [1, 1, 1], desat = 0.3, moss = 1, lichen = 
           // moss: thick at the base, creeping up the damp north side and along the tops of limbs
           float ground = texture2D(tBakeB, (vUW.xz - uBakeB.xy) * uBakeB.z).r;
           float hRel = vUW.y - max(ground, 0.0);
-          float low = smoothstep(${mossHeight.toFixed(2)}, 0.05, hRel);
+          float low = smoothstep(${mossHeight.toFixed(2)}, 0.05, hRel) * smoothstep(-0.35, 0.45, N.y);
           float northish = dot(normalize(N.xz + 1e-4), normalize(vec2(0.55, 0.83))) * 0.5 + 0.5;
           float top = smoothstep(0.15, 0.85, N.y);
           float mn = vnoise(vUW.xz * 3.0 + vUW.y * 2.0) * 0.6 + vnoise(vUW.xy * 9.0 + vUW.z * 7.0) * 0.4;
@@ -304,14 +304,14 @@ function roots(x, z, y0, r, geos, { count = 6, len = 2.2, rad = 0.11, seed = 0, 
     pts.push(V(px, y0 + 0.5, pz));
     for (let k = 1; k <= n; k++) {
       const f = k / n;
-      a += (r() - 0.5) * 0.7;
+      a += (r() - 0.5) * 1.0;
       px += Math.cos(a) * L / n; pz += Math.sin(a) * L / n;
       const g = heightAt(px, pz);
       const rr = rad * (1 - 0.8 * f);
-      pts.push(V(px, g + rr * (0.55 - 1.6 * f * f) + (k === 1 ? 0.12 : 0), pz));
+      pts.push(V(px, Math.max(g, -0.25) + rr * (0.85 - 2.0 * f * f) + (k === 1 ? 0.12 : 0), pz));
     }
     const limb = new Limb(smoothPath(pts, 6), rad * (0.8 + r() * 0.5), 0.012, 0, 0, 1);
-    geos.push(tube(limb, { radial: heading === null ? 9 : 6, lumps: 0.16, seed: seed + i * 3.1, collar: 0.5, barkTile: 0.7, tintV }));
+    geos.push(tube(limb, { radial: heading === null ? 9 : 7, lumps: 0.07, seed: seed + i * 3.1, collar: 0.5, barkTile: 0.7, tintV }));
   }
 }
 
@@ -362,6 +362,7 @@ function heroLeft(out, r) {
   trunk.swayAt = (t) => 0.5 * Math.pow(Math.max(0, t - 0.12), 2);
   out.geos.push(tube(trunk, { radial: 30, flare: 1.15, flareLobes: 5, flareH: 0.42, seed: 1.3, lumps: 0.07, knots: addKnots(r, 6, 9, 0.36), barkTile: 1.5, ground: y0 }));
   roots(x, z, y0, r, out.geos, { count: 7, len: 2.4, rad: 0.12, seed: 0.4 });
+  roots(x, z, y0, r, out.geos, { count: 2, len: 5.6, rad: 0.085, seed: 7.7, heading: 0.31, spread: 0.3 });   // across the trail
   const leader = (pts, r0, r1, s1) => new Limb(smoothPath(kinked(pts, r, r0 > 0.15 ? 0.05 : 0.16), 6), r0, r1, 0.004, s1, 1);
   const mains = [
     // arches right, across the path and the top of the frame
@@ -390,6 +391,7 @@ function heroRight(out, r) {
   trunk.swayAt = (t) => 0.9 * Math.pow(Math.max(0, t - 0.1), 2.2);
   out.geos.push(tube(trunk, { radial: 26, flare: 1.5, flareLobes: 4, flareH: 0.55, seed: 4.1, lumps: 0.06, knots: addKnots(r, 9, 10, 0.3), barkTile: 1.5, ground: y0 }));
   roots(x, z, y0, r, out.geos, { count: 8, len: 2.9, rad: 0.13, seed: 2.2 });
+  roots(x, z, y0, r, out.geos, { count: 2, len: 5.8, rad: 0.08, seed: 5.1, heading: 2.48, spread: 0.3 });
   const leader = (pts, r0, r1, s1) => new Limb(smoothPath(kinked(pts, r, r0 > 0.15 ? 0.05 : 0.16), 6), r0, r1, 0.004, s1, 1);
   const mains = [
     // low branches sweeping out over the pool
@@ -448,7 +450,7 @@ function forestTree(x, z, r, out, kind) {
   const y0 = heightAt(x, z);
   const far = kind === 'far', mid = kind === 'mid';
   const k = r();
-  const type = far ? (k < 0.25 ? 'old' : 'beech') : k < 0.05 ? 'snag' : k < 0.24 ? 'old' : k < 0.5 ? 'young' : 'beech';
+  const type = far ? (k < 0.08 ? 'snag' : k < 0.3 ? 'old' : k < 0.5 ? 'young' : 'beech') : k < 0.05 ? 'snag' : k < 0.24 ? 'old' : k < 0.5 ? 'young' : 'beech';
   let H = 21 + r() * 9, R = 0.22 + r() * r() * 0.3;
   if (type === 'old') { H = 25 + r() * 8; R = 0.46 + r() * 0.3; }
   if (type === 'young') { H = 10 + r() * 7; R = 0.07 + H * 0.006 + r() * 0.03; }
@@ -457,7 +459,7 @@ function forestTree(x, z, r, out, kind) {
   const rv = river(x, z);
   const e = Math.abs(rv.d) - rv.w;
   const toward = -Math.sign(rv.d) * smoothstep(9, 1.5, e) * (0.05 + r() * 0.13);
-  const la = r() * 6.283, lm = (type === 'young' ? 0.06 + r() * 0.16 : 0.02 + r() * 0.1);
+  const la = r() * 6.283, lm = (type === 'young' ? 0.06 + r() * 0.16 : 0.02 + r() * 0.1) * (far ? 1.7 : 1);
   const lx = -rv.tz * toward + Math.cos(la) * lm, lz = rv.tx * toward + Math.sin(la) * lm;
   const ctrl = [];
   const bend = (r() - 0.5) * (type === 'young' ? 1.6 : 1.1), ba = r() * 6.28;
@@ -507,6 +509,14 @@ function forestTree(x, z, r, out, kind) {
 }
 
 // Understory beech saplings: thin whippy stems with flat layered sprays, the bright mid-level green.
+// Near the places people stand, understory plants get real leaves on real twigs instead of spray cards.
+function leafyBranch(b, r, out, tint, shade) {
+  const tw = sprout(b, { count: Math.max(2, b.path.L * 7), t0: 0.12, t1: 0.95, angle: [32, 62], len: (t, p) => Math.min(0.34, 0.12 + p.path.L * 0.3), rRatio: 0.6, rTip: 0.002, droop: 0.3, planar: true, wiggle: 0.18, segs: 3, flex: 0.04 }, r);
+  for (const t of tw) { out.small.push(tube(t, { radial: 3, barkTile: 0.4 })); leafTwig(t, out.leaves, r, tint, { size: 0.074, shade }); }
+  leafTwig(b, out.leaves, r, tint, { from: 0.4, size: 0.074, shade });
+}
+const nearViewer = (x, z) => Math.hypot(x - 0.3, z - 6.5) < 8.5 || Math.hypot(x - 0.8, z + 0.5) < 7;
+
 function sapling(x, z, r, out) {
   const y0 = heightAt(x, z);
   const H = 1.2 + r() * r() * 4.2, R = 0.012 + H * 0.007;
@@ -516,12 +526,15 @@ function sapling(x, z, r, out) {
   const stem = new Limb(smoothPath(ctrl, 3), R, 0.004, 0, 0.12 * H * 0.4, 0);
   out.small.push(tube(stem, { radial: 5, barkTile: 0.4 }));
   const tint = [0.9 + r() * 0.2, 0.98 + r() * 0.1, 0.72 + r() * 0.25];
+  const real = out.realNear && nearViewer(x, z);
   const br = sprout(stem, { count: 5 + H * 3.4, t0: 0.2, t1: 0.97, angle: [50, 80], len: (t) => (0.4 + H * 0.2) * (1 - 0.55 * t), rRatio: 0.5, rTip: 0.003, up: 0.02, droop: 0.1, planar: false, wiggle: 0.16, segs: 3, flex: 0.05 }, r);
   for (const b of br) {
     out.small.push(tube(b, { radial: 3, barkTile: 0.4 }));
-    sprayBranch(b, out.sprays, r, tint, { spacing: 0.17, size: 0.5, from: 0.1, sag: 0.15, shade: 0.9 });
+    if (real) leafyBranch(b, r, out, tint, 0.8 + 0.25 * b.tp);
+    else sprayBranch(b, out.sprays, r, tint, { spacing: 0.17, size: 0.5, from: 0.1, sag: 0.15, shade: 0.9 });
   }
-  sprayBranch(stem, out.sprays, r, tint, { spacing: 0.22, size: 0.5, from: 0.55, shade: 0.95 });
+  if (real) leafTwig(stem, out.leaves, r, tint, { from: 0.6, size: 0.074 });
+  else sprayBranch(stem, out.sprays, r, tint, { spacing: 0.22, size: 0.5, from: 0.55, shade: 0.95 });
 }
 
 // Understory shrubs: several arching stems from one stool, densely leafed, 2-4 m tall.
@@ -530,6 +543,7 @@ function shrub(x, z, r, out) {
   const n = 4 + Math.floor(r() * 5);
   const tint = [0.8 + r() * 0.2, 0.92 + r() * 0.12, 0.62 + r() * 0.25];
   out.contacts.push({ x, z, r: 0.5, dark: 0.45, moss: 0.3 });
+  const real = out.realNear && nearViewer(x, z);
   for (let i = 0; i < n; i++) {
     const a = (i / n) * 6.283 + r(), H = 1.6 + r() * 2.4, out0 = 0.5 + r() * 1.1;
     const ctrl = [];
@@ -539,9 +553,11 @@ function shrub(x, z, r, out) {
     const br = sprout(stem, { count: 5 + H * 3, t0: 0.22, t1: 0.97, angle: [45, 75], len: (t) => (0.35 + H * 0.16) * (1 - 0.5 * t), rRatio: 0.5, rTip: 0.003, droop: 0.12, planar: false, wiggle: 0.18, segs: 3, flex: 0.05 }, r);
     for (const b of br) {
       out.small.push(tube(b, { radial: 3, barkTile: 0.4 }));
-      sprayBranch(b, out.sprays, r, tint, { spacing: 0.15, size: 0.44, from: 0.1, sag: 0.2, shade: 0.72 + 0.3 * b.tp });
+      if (real) leafyBranch(b, r, out, tint, 0.7 + 0.3 * b.tp);
+      else sprayBranch(b, out.sprays, r, tint, { spacing: 0.15, size: 0.44, from: 0.1, sag: 0.2, shade: 0.72 + 0.3 * b.tp });
     }
-    sprayBranch(stem, out.sprays, r, tint, { spacing: 0.2, size: 0.46, from: 0.5, shade: 0.95 });
+    if (real) leafTwig(stem, out.leaves, r, tint, { from: 0.55, size: 0.074 });
+    else sprayBranch(stem, out.sprays, r, tint, { spacing: 0.2, size: 0.46, from: 0.5, shade: 0.95 });
   }
 }
 
@@ -553,7 +569,7 @@ export function createTrees(quality) {
   heroLeft(heroL, r);
   heroRight(heroR, r);
 
-  const forest = { geos: [], small: [], sprays: new Instances(), boughs: new Instances(), contacts: [] };
+  const forest = { geos: [], small: [], sprays: new Instances(), boughs: new Instances(), leaves: new Instances(), contacts: [], realNear: hi };
   const placed = [{ x: HERO_TREES.left.x, z: HERO_TREES.left.z }, { x: HERO_TREES.right.x, z: HERO_TREES.right.z }];
   const tooClose = (x, z, d) => placed.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < d * d);
   const okGround = (x, z, margin) => {
@@ -636,6 +652,7 @@ export function createTrees(quality) {
   const lm = leafMaterials();
   const thinned = [];
   for (const h of [heroL, heroR]) { const m = h.leaves.build(leafGeo, lm, { shadowFrac: 0.7, mirrorFrac: 0.3 }); thinned.push(m); group.add(m); }
+  if (forest.leaves.count) { const m = forest.leaves.build(leafGeo, lm, { shadowFrac: 0.7, mirrorFrac: 0.3 }); m.frustumCulled = false; thinned.push(m); group.add(m); }
   const sprayM = cardMaterials('spray_atlas', 2, 2);
   const boughM = cardMaterials('bough_atlas', 2, 1);
   const sprays = forest.sprays.build(cardGeometry(2, 0.16, 0.1), sprayM, { shadowFrac: 0.5, mirrorFrac: 0.5 });
@@ -647,7 +664,7 @@ export function createTrees(quality) {
   group.userData.contacts = forest.contacts;
   group.userData.noReflect = noReflect;
   group.userData.thinned = thinned;
-  group.userData.counts = { near: nNear, far: nFar, saplings: nSap, heroLeaves: heroL.leaves.count + heroR.leaves.count, sprays: forest.sprays.count, boughs: forest.boughs.count };
+  group.userData.counts = { near: nNear, far: nFar, saplings: nSap, heroLeaves: heroL.leaves.count + heroR.leaves.count, underLeaves: 0, sprays: forest.sprays.count, boughs: forest.boughs.count };
   console.warn('trees', JSON.stringify(group.userData.counts));
   return group;
 }

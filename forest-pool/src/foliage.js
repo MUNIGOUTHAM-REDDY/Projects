@@ -101,15 +101,16 @@ function foliageShading(mat, { card, dry = false }) {
           // the sun is on the far side of the blade: light it from behind, tinted by the leaf
           fBack = smoothstep(0.05, -0.2, nl);
           vec3 base = diffuseColor.rgb;
-          vec3 under = mix(base, vec3(dot(base, vec3(0.3, 0.6, 0.1))) * vec3(0.9, 1.0, 0.72), 0.35) * 1.12;
+          vec3 under = mix(base, vec3(dot(base, vec3(0.3, 0.6, 0.1))) * vec3(0.9, 1.0, 0.72), 0.3) * 0.95;
           if (!gl_FrontFacing) diffuseColor.rgb = under;
-          vec3 trans = base * vec3(1.08, 1.5, 0.42) + vec3(0.008, 0.03, 0.0);
-          ${dry ? 'trans = base * vec3(1.3, 1.0, 0.6); if (!gl_FrontFacing) diffuseColor.rgb = base * 1.25;' : ''}
+          vec3 trans = min(base * vec3(1.05, 1.45, 0.4), vec3(0.3, 0.6, 0.13));   // transmission is the leaf's own colour, never white
+          ${dry ? 'trans = base * vec3(1.15, 0.9, 0.5); if (!gl_FrontFacing) diffuseColor.rgb = base * 1.1;' : ''}
           diffuseColor.rgb = mix(diffuseColor.rgb, trans, fBack);
           normal = mix(normal, -normal, step(nl, 0.0));
         }`)
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
-        reflectedLight.directSpecular *= (1.0 - fBack) * (gl_FrontFacing ? 1.0 : 0.3);`);
+        reflectedLight.directSpecular *= (1.0 - fBack) * (gl_FrontFacing ? 1.0 : 0.3) * ${card ? '0.25' : '0.6'};
+        reflectedLight.indirectSpecular *= ${card ? '0.3' : '0.6'};`);
   });
   dapple(mat);
   return mat;
@@ -146,7 +147,7 @@ export function cardMaterials(name, cols, rows) {
   const nrm = tex(A(`${name}_n.jpg`), { srgb: false, repeat: false });
   const mat = new THREE.MeshStandardMaterial({
     map, normalMap: nrm, normalScale: new THREE.Vector2(1.0, 1.0), alphaTest: 0.5, side: THREE.DoubleSide,
-    roughness: 0.62, metalness: 0, envMapIntensity: 0.6,
+    roughness: 0.8, metalness: 0, envMapIntensity: 0.4,
   });
   atlasPatch(mat, cols, rows, 'm');
   foliageShading(mat, { card: true });
@@ -231,13 +232,13 @@ export function litterMaterials() {
   if (litterMats) return litterMats;
   const map = tex(A('leaf_atlas.webp'), { repeat: false });
   const nrm = tex(A('leaf_atlas_n.jpg'), { srgb: false, repeat: false });
-  const mat = new THREE.MeshStandardMaterial({ map, normalMap: nrm, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.7, metalness: 0, envMapIntensity: 0.7 });
+  const mat = new THREE.MeshStandardMaterial({ map, normalMap: nrm, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.8, metalness: 0, envMapIntensity: 0.35 });
   underwater(mat, { wet: false });
   atlasPatch(mat, 4, 1, 'm');
   // dead leaves: keep the veins and blotches, lose the chlorophyll; the instance colour supplies the hue
   chain(mat, 'dry', (s) => {
     s.fragmentShader = s.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
-      diffuseColor.rgb = vec3(pow(dot(diffuseColor.rgb, vec3(0.4, 0.5, 0.1)) * 9.0, 1.5));`);
+      diffuseColor.rgb = vec3(min(pow(dot(diffuseColor.rgb, vec3(0.4, 0.5, 0.1)) * 9.0, 1.5), 1.1));`);
   });
   foliageShading(mat, { card: false, dry: true });
   return (litterMats = { mat, depth: null });

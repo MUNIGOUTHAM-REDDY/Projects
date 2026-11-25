@@ -86,13 +86,14 @@ const WaterShader = {
 
       // long glassy swells, finer chop where the water runs fast and shallow, a breath of wind
       vec3 n1 = flowNormal(q, fl, vec2(0.5, 0.085), 3.0, 0.0);
-      vec3 n2 = flowNormal(q, fl, vec2(1.9, 0.3), 1.9, 0.3);
-      vec3 n4 = flowNormal(q, fl, vec2(5.5, 0.85), 1.1, 0.6);
+      vec3 n2 = flowNormal(q, fl, vec2(1.5, 0.36), 1.9, 0.3);
+      vec3 n4 = flowNormal(q, fl, vec2(3.4, 0.8), 1.1, 0.6);
       vec3 n3 = texture2D(tWaterN, p * 0.19 + uTime * vec2(0.013, 0.009)).xyz * 2.0 - 1.0;
       float fast = smoothstep(0.15, 1.15, speed);
-      float chop = 0.2 + 0.85 * fast + 0.7 * clamp(foamK, 0.0, 1.0);
+      float chop = 0.17 + 0.6 * fast + 0.6 * clamp(foamK, 0.0, 1.0);
       chop *= smoothstep(0.0, 0.08, depth) * 0.75 + 0.25;
-      vec2 nq = (n1.xy * 1.0 + n2.xy * (0.4 + 0.6 * fast) + n4.xy * (0.08 + 0.6 * fast)) * chop;
+      // pools carry only a slow swell; chop belongs to the riffles
+      vec2 nq = (n1.xy * 1.0 + n2.xy * (0.12 + 0.5 * fast) + n4.xy * (0.3 * fast * fast)) * chop;
       nq.y *= 0.3;                                          // crests run with the flow: long streaks, hardly any slope along it
       vec2 nxy = Nl * nq.x + T * nq.y + n3.xy * 0.03;
       nxy *= 1.0 / (1.0 + dist * 0.03);                    // tame sparkle aliasing far away
@@ -104,7 +105,7 @@ const WaterShader = {
       // refraction of the bed, bent more where the water is deeper
       vec2 suv = gl_FragCoord.xy / uRes;
       float bend = clamp(depth * 1.6, 0.0, 1.0) / (1.0 + dist * 0.12);
-      vec3 refr = texture2D(tRefr, suv + n.xz * 0.11 * bend).rgb;
+      vec3 refr = texture2D(tRefr, suv + n.xz * 0.05 * bend).rgb;
 
       vec3 refl = texture2D(tDiffuse, vUv.xy / vUv.w + n.xz * 0.075).rgb;
       refl = min(refl, vec3(6.0));

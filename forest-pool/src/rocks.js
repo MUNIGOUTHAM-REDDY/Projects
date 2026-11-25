@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js';
-import { heightAt, rng, river, bankE, pathDist, ROCKS, fbm, smoothstep } from './world.js';
+import { heightAt, rng, river, bankE, pathDist, ROCKS, fbm, smoothstep, PATH } from './world.js';
 import { tex, A } from './textures.js';
 import { chain, underwater, dapple, G } from './shaders.js';
 import { loadModel } from './models.js';
@@ -150,6 +150,18 @@ export function createRocks(quality) {
     const v = 0.6 + r() * 0.55, w = r();
     per[n % 3].push({ m: m4.clone(), c: [v * (0.95 + w * 0.12), v * (0.93 + w * 0.06), v * (0.86 - w * 0.06)] });
     n++;
+  }
+  // grit and small stones trodden into the trail
+  const nPath = quality === 'low' ? 250 : 700;
+  for (let k = 0; k < nPath; k++) {
+    const seg = Math.floor(r() * (PATH.length - 3)) + 2, f = r();
+    const x = PATH[seg][0] + (PATH[seg + 1][0] - PATH[seg][0]) * f + (r() + r() - 1) * 0.75, z = PATH[seg][1] + (PATH[seg + 1][1] - PATH[seg][1]) * f + (r() - 0.5) * 0.4;
+    const size = 0.01 + Math.pow(r(), 3) * 0.05;
+    e.set((r() - 0.5) * 0.5, r() * 6.283, (r() - 0.5) * 0.5); q.setFromEuler(e);
+    p.set(x, heightAt(x, z) - size * 0.3, z); s.set(size * (0.8 + r() * 0.5), size * (0.6 + r() * 0.4), size * (0.8 + r() * 0.5));
+    m4.compose(p, q, s);
+    const v = 0.55 + r() * 0.5;
+    per[k % 3].push({ m: m4.clone(), c: [v, v * 0.96, v * 0.88] });
   }
   per.forEach((list, i) => {
     const inst = new THREE.InstancedMesh(geos[i], mat, list.length);

@@ -96,8 +96,14 @@ export function createTerrain(quality, splat) {
         // the path: packed earth, paler and sandier where feet wear it
         vec3 pathCol = mix(cD * vec3(1.12, 1.0, 0.86), cS * vec3(0.95, 0.88, 0.76), smoothstep(0.45, 1.0, path) * 0.55);
         pathCol = mix(pathCol, cL * vec3(0.8, 0.66, 0.5), smoothstep(0.55, 0.8, sp.b) * 0.5 * (1.0 - smoothstep(0.7, 1.0, sp.r)));
-        col = mix(col, pathCol * 0.8, path);
+        // trodden earth: darker damp hollows, paler worn humps, grit
+        float tread = vnoise(vUW.xz * vec2(2.6, 1.7) + 5.0) * 0.6 + vnoise(vUW.xz * 7.0) * 0.4;
+        pathCol *= 0.5 + 0.42 * tread;
+        pathCol = mix(pathCol, cP * 0.5, smoothstep(0.62, 0.8, vnoise(vUW.xz * 3.3 + 17.0)) * 0.5);
+        col = mix(col, pathCol, path);
         nrm = mix(nrm, nD, path);
+        float pb = path * 0.5;
+        nrm.xy += pb * vec2(vnoise(vUW.xz * 3.1 + 0.37) - vnoise(vUW.xz * 3.1 - 0.37), vnoise(vUW.xz * 3.1 + vec2(0.0, 0.5)) - vnoise(vUW.xz * 3.1 - vec2(0.0, 0.5)));
 
         // banks: gravel and cobbles near the water on gentle ground, raw mud where the bank is cut
         float nearW = smoothstep(0.42, 0.08, y + (mid - 0.5) * 0.22 + (lum(cP) - 0.4) * 0.25);
@@ -106,8 +112,14 @@ export function createTerrain(quality, splat) {
         vec3 bank = mix(gravel, cM * vec3(0.8, 0.72, 0.6), steep * smoothstep(0.0, 0.2, y));
         col = mix(col, bank, nearW * (1.0 - 0.6 * moss * smoothstep(0.1, 0.3, y)));
         nrm = mix(nrm, mix(nP, nD, steep), nearW);
-        float cut = smoothstep(0.45, 0.8, slope) * step(0.02, y);
-        col = mix(col, cM * vec3(0.62, 0.52, 0.42), cut * 0.85);
+        // steep bank faces are textured from the side (no vertical smearing): raw earth with stones in it
+        vec3 an = abs(normalize(vTN));
+        vec2 suvv = an.x > an.z ? vec2(vUW.z, vUW.y) : vec2(vUW.x, vUW.y);
+        vec3 cSide = mix(texture2D(tMud, suvv * 0.55).rgb, texture2D(tPeb, suvv * 0.4).rgb * 0.8, 0.3 + 0.3 * mid);
+        vec3 nSide = texture2D(nPeb, suvv * 0.4).xyz;
+        float cut = smoothstep(0.3, 0.6, slope);
+        col = mix(col, cSide * vec3(0.6, 0.52, 0.42) * (0.6 + 0.6 * smoothstep(-0.1, 0.5, y)), cut * 0.92);
+        nrm = mix(nrm, nSide, cut);
 
         // riverbed: cobbles on the riffles, pale sand and silt in the pools
         float bed = smoothstep(0.03, -0.1, y);

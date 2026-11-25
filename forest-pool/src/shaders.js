@@ -121,7 +121,7 @@ export function underwater(mat, { caustics = true, wet = true } = {}) {
         ${wet ? `{
           float wl = vUW.y - uWaterY + 0.12 * (vnoise(vUW.xz * 1.7) - 0.5) + 0.05 * (vnoise(vUW.xz * 7.0) - 0.5);
           float wetK = smoothstep(0.24, 0.05, wl);
-          diffuseColor.rgb *= mix(1.0, 0.42, wetK);
+          diffuseColor.rgb *= mix(1.0, 0.34, wetK);
           roughnessFactor = mix(roughnessFactor, 0.45, wetK * step(uWaterY - 0.01, vUW.y));
         }` : ''}`)
       .replace('#include <opaque_fragment>', `#include <opaque_fragment>

@@ -39,7 +39,7 @@ const VolumetricShader = {
       // individual holes in the high canopy: narrow, well-separated beams rather than an even veil
       vec2 pc = wp.xz + uSunDir.xz / max(uSunDir.y, 0.2) * (16.0 - wp.y);
       float holes = vnoise(pc * 0.75 + 5.0) * 0.6 + vnoise(pc * 1.9 - 2.0) * 0.4;
-      g *= 0.3 + 1.5 * smoothstep(0.56, 0.7, holes);
+      g *= 0.1 + 3.2 * smoothstep(0.6, 0.69, holes);
       vec4 sc = uShadowMatrix * vec4(wp, 1.0); sc.xyz /= sc.w;
       if (uShadowOn < 0.5 || sc.x < 0.0 || sc.x > 1.0 || sc.y < 0.0 || sc.y > 1.0 || sc.z > 1.0) return g;
       return step(sc.z - 0.001, unpackRGBAToDepth(texture2D(uShadowMap, sc.xy))) * g;
@@ -66,9 +66,9 @@ const VolumetricShader = {
         acc += sunVis(p) * dens * dt * exp(-t * 0.05);
       }
       float mu = dot(rd, uSunDir);
-      float g = 0.5;
+      float g = 0.7;
       float phase = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) * 0.25 + 0.1;
-      vec3 col = vec3(1.0, 0.88, 0.62) * acc * phase * 0.017 * uStrength;
+      vec3 col = vec3(1.0, 0.88, 0.62) * acc * phase * 0.02 * uStrength;
       gl_FragColor = vec4(col, 1.0);
     }`,
 };

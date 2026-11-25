@@ -28,7 +28,7 @@ const SS = Number(params.get('ss') || 0);
 renderer.setPixelRatio(SS || Math.min(devicePixelRatio, quality === 'low' ? 1.25 : 1.75));
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = Number(params.get('exp') || 1.1);
+renderer.toneMappingExposure = Number(params.get('exp') || 1.2);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 setAnisotropy(Math.min(8, renderer.capabilities.getMaxAnisotropy()));
@@ -90,7 +90,7 @@ if (!flag('dof')) pipeline.scenePass.dof = false;
 const PRESETS = {
   trail: { label: 'Trail', pos: [0.25, 1.72, 8.4], target: [-0.45, 1.5, -3.0], fov: 60, focus: 9 },
   edge: { label: "Water's edge", pos: [0.25, 0.5, 1.5], target: [1.6, 0.35, -9.0], fov: 52, focus: 7 },
-  farbank: { label: 'Far bank', pos: [-7.6, 1.3, -6.6], target: [-0.2, 1.5, 3.6], fov: 56, focus: 11 },
+  farbank: { label: 'Far bank', pos: [-5.4, 1.25, -6.4], target: [3.0, 0.4, -11.5], fov: 56, focus: 9 },
   canopy: { label: 'Canopy', pos: [-1.4, 1.2, 6.2], target: [-3.2, 8.5, 2.6], fov: 68, focus: 7 },
   above: { label: 'Above', pos: [-6.4, 11.5, -1.6], target: [1.8, 0, -8.5], fov: 52, focus: 15 },
 };

@@ -196,7 +196,7 @@ export function createGroundCover(quality) {
   // --- Leaf litter: small, weathered beech leaves. They drift into the hollows and along the edges of the
   // trail, lie curled, crumpled or half trodden in, and a few have sunk onto the stream bed by the banks.
   const litter = new Instances();
-  const litterTarget = hi ? 38000 : 11000;
+  const litterTarget = hi ? 44000 : 12000;
   const nrm = new THREE.Vector3(), dir = new THREE.Vector3(), side = new THREE.Vector3(), X = new THREE.Vector3(), Z = new THREE.Vector3();
   let n = 0; tries = 0;
   while (n < litterTarget && tries++ < litterTarget * 14) {
@@ -208,7 +208,7 @@ export function createGroundCover(quality) {
     const pd = pathDist(x, z);
     const hollow = -fbm(x * 0.9, z * 0.9, 2, 5);                       // matches the terrain's small relief
     let drift = 0.1 + 2.6 * Math.max(0, fbm(x * 0.3 + 9, z * 0.3, 3, 13)) + 1.8 * Math.max(0, hollow) + 0.25 * fbm(x * 2.1, z * 2.1, 2, 19);
-    if (z > 2.5) drift += 0.75 * Math.exp(-(((pd - 0.75) / 0.3) ** 2)) - 0.5 * smoothstep(0.55, 0.2, pd);   // swept to the path's edges
+    if (z > 2.5) drift += 0.75 * Math.exp(-(((pd - 0.75) / 0.3) ** 2)) + 0.22 * smoothstep(0.7, 0.2, pd);   // heaped at the path's edges, scattered down the middle
     if (r() > drift) continue;
     if (nearRock(x, z, -0.25)) continue;
     const gx = (heightAt(x + 0.08, z) - y) / 0.08, gz = (heightAt(x, z + 0.08) - y) / 0.08;
@@ -220,7 +220,7 @@ export function createGroundCover(quality) {
     dir.set(Math.cos(ra), 0, Math.sin(ra));
     dir.addScaledVector(nrm, -dir.dot(nrm)).normalize();
     side.crossVectors(dir, nrm);
-    const sc = 0.026 + Math.pow(r(), 1.7) * 0.042;
+    const sc = 0.03 + Math.pow(r(), 1.5) * 0.045;
     const curl = mode < 0.55 ? 0.3 + r() * 0.8 : mode < 0.8 ? 1.5 + r() * 2 : 2.5 + r() * 3;
     const buried = mode >= 0.92;
     p.set(x, y + (buried ? -0.012 : 0.004 + r() * 0.01) + (mode >= 0.8 && !buried ? sc * 0.25 : 0), z);
