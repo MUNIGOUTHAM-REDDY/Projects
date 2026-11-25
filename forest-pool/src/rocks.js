@@ -1,133 +1,182 @@
-// Moss-covered boulders and low moss mounds, procedurally displaced and triplanar-textured.
+// Photoscanned mossy boulders (Poly Haven rock_moss_set_01/02), bedded into the ground: each is sunk
+// by a good part of its height, blends into soil and moss where it meets the terrain, turns dark and
+// glossy at the waterline, and gains extra moss on its upward faces. Plus cobbles along the water's
+// edge, a fallen trunk in the riffle and a stump.
 import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js';
-import { heightAt, rng, poolE } from './world.js';
-import { pbr } from './textures.js';
-import { chain, underwater, dapple } from './shaders.js';
+import { heightAt, rng, river, bankE, pathDist, ROCKS, fbm } from './world.js';
+import { tex, A } from './textures.js';
+import { chain, underwater, dapple, G } from './shaders.js';
+import { loadModel } from './models.js';
 
 const perlin = new ImprovedNoise();
 
-function rockGeometry(seed, { sx = 1, sy = 0.6, sz = 1, lump = 0.35, detail = 18 } = {}) {
-  let g = new THREE.IcosahedronGeometry(1, detail);
-  g.deleteAttribute('uv');
-  g.deleteAttribute('normal');
+// Shared "sits in the ground" patch: needs the baked terrain height.
+function bedded(mat, { moss = 0.6, blend = 0.14, key = '' } = {}) {
+  const mossTex = tex(A('forest_leaves_02_diff.jpg'));
+  underwater(mat);
+  chain(mat, 'bedded' + moss + blend + key, (s) => {
+    Object.assign(s.uniforms, { tMossR: { value: mossTex }, tBakeR: G.tBake, uBakeR: G.uBake });
+    s.vertexShader = s.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vRN;')
+      .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
+        vRN = objectNormal;
+        #ifdef USE_INSTANCING
+          vRN = mat3(instanceMatrix) * vRN;
+        #endif
+        vRN = normalize(mat3(modelMatrix) * vRN);`);
+    s.fragmentShader = s.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vRN; uniform sampler2D tMossR, tBakeR; uniform vec4 uBakeR; float rMoss;`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        {
+          vec3 N = normalize(vRN);
+          float ground = texture2D(tBakeR, (vUW.xz - uBakeR.xy) * uBakeR.z).r;
+          float rel = vUW.y - ground;
+          float n1 = vnoise(vUW.xz * 5.0 + vUW.y * 3.0), n2 = vnoise(vUW.xz * 17.0 + vUW.y * 11.0);
+          // moss cushions on upward faces, thicker near the ground and away from splashing water
+          float m = ${moss.toFixed(2)} * (smoothstep(0.1, 0.8, N.y) * 1.1 + smoothstep(0.5, 0.0, rel) * 0.5) + (n1 - 0.5) * 0.8 + (n2 - 0.5) * 0.3 - 0.25;
+          m *= smoothstep(0.02, 0.2, vUW.y);
+          rMoss = smoothstep(0.3, 0.6, m);
+          vec3 tw = pow(abs(N), vec3(3.0)); tw /= (tw.x + tw.y + tw.z);
+          vec3 mt = texture2D(tMossR, vUW.zy * 0.9).rgb * tw.x + texture2D(tMossR, vUW.xz * 0.9).rgb * tw.y + texture2D(tMossR, vUW.xy * 0.9).rgb * tw.z;
+          mt *= 0.55 + 1.3 * dot(mt, vec3(0.33));
+          diffuseColor.rgb = mix(diffuseColor.rgb, mt * vec3(0.34, 0.62, 0.17) * (0.7 + 0.6 * n1), rMoss);
+          // soil, litter and damp creep up from the ground; the join itself falls into shade
+          float soil = smoothstep(${blend.toFixed(2)}, 0.0, rel + (n1 - 0.5) * 0.1) * step(0.0, ground);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.085, 0.07, 0.04) * (0.6 + n2), soil * 0.85);
+          diffuseColor.rgb *= mix(0.45, 1.0, smoothstep(-0.02, 0.22, rel));
+        }`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        roughnessFactor = mix(roughnessFactor, 1.0, rMoss);`);
+  });
+  dapple(mat);
+  return mat;
+}
+
+function rockMaterial(set) {
+  const d = `models/${set}`;
+  const o = { repeat: false, flipY: false };
+  const mat = new THREE.MeshStandardMaterial({
+    map: tex(A(`${d}/diff.jpg`), o), normalMap: tex(A(`${d}/nor.jpg`), { ...o, srgb: false }), roughnessMap: tex(A(`${d}/rough.jpg`), { ...o, srgb: false }),
+    roughness: 1, metalness: 0, color: new THREE.Color(0.92, 0.92, 0.88), envMapIntensity: 0.8,
+  });
+  return bedded(mat, { moss: 0.75, key: set });
+}
+
+function pebbleGeometry(seed) {
+  let g = new THREE.IcosahedronGeometry(1, 2);
+  g.deleteAttribute('uv'); g.deleteAttribute('normal');
   g = mergeVertices(g);
-  const p = g.attributes.position;
-  const v = new THREE.Vector3();
+  const p = g.attributes.position, v = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i);
-    let n = 0, a = 1, f = 1.1;
-    for (let o = 0; o < 6; o++) {
-      n += a * perlin.noise(v.x * f + seed, v.y * f + seed * 0.7, v.z * f - seed);
-      a *= 0.5; f *= 2.1;
-    }
-    const d = 1 + n * lump;
-    v.multiplyScalar(d);
-    // Flatten the underside so rocks sit into the ground.
-    if (v.y < -0.1) v.y = -0.1 + (v.y + 0.1) * 0.35;
-    p.setXYZ(i, v.x * sx, v.y * sy, v.z * sz);
+    const n = perlin.noise(v.x * 1.2 + seed, v.y * 1.2, v.z * 1.2 - seed) * 0.35 + perlin.noise(v.x * 3 + seed, v.y * 3, v.z * 3) * 0.1;
+    v.multiplyScalar(1 + n);
+    p.setXYZ(i, v.x, v.y * 0.62, v.z * 0.82);
   }
   g.computeVertexNormals();
   return g;
 }
 
-function mossMaterial() {
-  const moss = pbr('forest_leaves_02');
-  const moss2 = pbr('aerial_grass_rock');
-  const mat = new THREE.MeshPhysicalMaterial({
-    roughness: 0.95, metalness: 0,
-    sheen: 0.6, sheenRoughness: 0.7, sheenColor: new THREE.Color(0.4, 0.65, 0.18),
-  });
-  chain(mat, 'moss-triplanar', (s) => {
-    Object.assign(s.uniforms, { tM1: { value: moss.map }, nM1: { value: moss.normal }, tM2: { value: moss2.map } });
-    s.vertexShader = s.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vRW; varying vec3 vRN;')
-      .replace('#include <project_vertex>', `#include <project_vertex>
-        vRW = (modelMatrix * vec4(transformed, 1.0)).xyz; vRN = normalize(mat3(modelMatrix) * objectNormal);`);
+function pebbleMaterial() {
+  const t = tex(A('mossy_rock_diff.jpg'));
+  const mat = new THREE.MeshStandardMaterial({ roughness: 0.82, metalness: 0, envMapIntensity: 0.8 });
+  bedded(mat, { moss: 0.35, blend: 0.03, key: 'peb' });
+  chain(mat, 'pebtri', (s) => {
+    Object.assign(s.uniforms, { tPebble: { value: t } });
     s.fragmentShader = s.fragmentShader
-      .replace('#include <common>', `#include <common>
-        varying vec3 vRW; varying vec3 vRN; uniform sampler2D tM1, nM1, tM2;
-        vec3 triT(sampler2D t, vec3 p, vec3 w){ return texture2D(t, p.zy).rgb * w.x + texture2D(t, p.xz).rgb * w.y + texture2D(t, p.xy).rgb * w.z; }`)
+      .replace('#include <common>', '#include <common>\nuniform sampler2D tPebble;')
       .replace('#include <map_fragment>', `
-        vec3 tw = pow(abs(normalize(vRN)), vec3(4.0)); tw /= (tw.x + tw.y + tw.z);
-        vec3 c1 = triT(tM1, vRW * 1.7, tw);
-        vec3 c2 = triT(tM2, vRW * 0.45, tw);
-        float lum = dot(mix(c1, c2, 0.45), vec3(0.33));
-        vec3 deep = vec3(0.035, 0.11, 0.01), litc = vec3(0.26, 0.5, 0.045);
-        float shade = smoothstep(-0.5, 0.7, vRN.y);
-        vec3 mc = mix(deep, litc, shade) * (0.15 + lum * 2.6);
-        mc = mix(mc, mix(c1, c2, 0.45) * vec3(0.7, 1.0, 0.45), 0.3);
-        mc = mix(mc * 0.35, mc, smoothstep(-0.9, -0.2, vRN.y));
-        mc *= mix(0.4, 1.0, smoothstep(0.0, 0.25, vRW.y - 0.0));
-        float crev = smoothstep(0.25, 0.6, dot(triT(tM2, vRW * 0.25 + 3.7, tw), vec3(0.33)));
-        mc = mix(mc * vec3(0.55, 0.6, 0.5), mc * 1.1, crev);
-        diffuseColor.rgb *= mc;
-        vec3 rN = triT(nM1, vRW * 1.7, tw) * 2.0 - 1.0; rN.xy *= 0.55;
-      `)
-      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
-          vec3 wn = normalize(vRN);
-          vec3 T = normalize(cross(wn, abs(wn.y) < 0.95 ? vec3(0,1,0) : vec3(1,0,0)));
-          vec3 B = cross(wn, T);
-          vec3 pw = normalize(T * rN.x + B * rN.y + wn * max(rN.z, 0.3));
-          normal = normalize((viewMatrix * vec4(pw, 0.0)).xyz);
-        }`);
+          vec3 w = pow(abs(normalize(vRN)), vec3(4.0)); w /= (w.x + w.y + w.z);
+          vec3 c = texture2D(tPebble, vUW.zy * 1.3).rgb * w.x + texture2D(tPebble, vUW.xz * 1.3).rgb * w.y + texture2D(tPebble, vUW.xy * 1.3).rgb * w.z;
+          diffuseColor.rgb *= mix(vec3(dot(c, vec3(0.33))), c, 0.6) * 1.5;
+        }
+        #include <map_fragment>`);
   });
-  underwater(mat);
-  dapple(mat, { strength: 0.85 });
   return mat;
 }
 
-// Boulders placed to echo the reference: a big one in the near foreground, clusters left and right.
-const ROCKS = [
-  // x, z, size, flatten
-  [0.0, 4.65, 0.38, 0.6],     // large foreground rock, bottom centre-right
-  [0.1, 4.0, 0.26, 0.62],    // mid rock beyond it
-  [-1.35, 4.25, 0.34, 0.62],  // bottom-left rock
-  [-0.95, 4.75, 0.2, 0.7],
-  [-1.3, 5.2, 0.24, 0.6],
-  [0.75, 4.1, 0.22, 0.65],
-  [1.15, 4.6, 0.32, 0.6],
-  [-3.1, 2.6, 0.45, 0.6],
-  [3.4, -5.6, 0.6, 0.55],
-  [-4.6, -5.5, 0.7, 0.5],
-  [5.6, 0.2, 0.55, 0.6],
-];
-
 export function createRocks(quality) {
-  const r = rng(42);
-  const mat = mossMaterial();
   const group = new THREE.Group();
-  const detail = quality === 'low' ? 10 : 18;
-  const list = [...ROCKS];
-  // A few scattered submerged stones and bank rocks.
-  for (let i = 0; i < 26; i++) {
-    const ang = r() * Math.PI * 2, rad = 3 + r() * 14;
-    const x = -0.4 + Math.cos(ang) * rad, z = -2.2 + Math.sin(ang) * rad * 0.8;
-    if (z > 1 && Math.abs(x) < 2.5) continue;
-    const pe = poolE(x, z);
-    list.push([x, z, (pe < 1 ? 0.25 : 0.3) + r() * 0.35, 0.5 + r() * 0.2]);
+  const noReflect = [];
+  group.userData.noReflect = noReflect;
+  const r = rng(42);
+  Promise.all([loadModel('rock_moss_set_01'), loadModel('rock_moss_set_02')]).then(([a, b]) => {
+    const mats = [rockMaterial('rock_moss_set_01'), rockMaterial('rock_moss_set_02')];
+    const all = [...a.map((v) => ({ ...v, mat: mats[0] })), ...b.map((v) => ({ ...v, mat: mats[1] }))];
+    ROCKS.forEach((rk, i) => {
+      const v = all[(i * 5 + 3) % all.length];
+      const m = new THREE.Mesh(v.geo, v.mat);
+      let sc = rk.r / v.radius;
+      let h = v.height * sc;
+      const bed = heightAt(rk.x, rk.z);
+      // boulders in the stream must break the surface
+      if (bed < 0 && h * (1 - rk.sink) < -bed + 0.22) { const k = Math.min(1.7, (-bed + 0.22) / (h * (1 - rk.sink))); sc *= k; h *= k; }
+      m.scale.setScalar(sc);
+      m.rotation.set((r() - 0.5) * 0.25, rk.rot, (r() - 0.5) * 0.25);
+      m.position.set(rk.x, bed - h * rk.sink, rk.z);
+      m.castShadow = true; m.receiveShadow = true;
+      group.add(m);
+    });
+  });
+
+  // Cobbles and pebbles: thick along the waterline and on the gravel bars, scattered over the riffles.
+  const count = quality === 'low' ? 1400 : 3600;
+  const geos = [pebbleGeometry(1.3), pebbleGeometry(5.7), pebbleGeometry(9.1)];
+  const mat = pebbleMaterial();
+  const per = geos.map(() => []);
+  let n = 0, tries = 0;
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), s = new THREE.Vector3();
+  while (n < count && tries++ < count * 30) {
+    const ang = r() * 6.283, rad = Math.pow(r(), 0.7) * 30;
+    const x = -1 + Math.cos(ang) * rad, z = -4 + Math.sin(ang) * rad;
+    const y = heightAt(x, z);
+    if (y > 0.3 || y < -0.5) continue;
+    const edge = Math.exp(-(((y - 0.03) / 0.1) ** 2));
+    if (r() > 0.12 + 0.88 * edge) continue;
+    if (pathDist(x, z) < 0.5 && r() < 0.8) continue;
+    const big = r();
+    const size = 0.025 + Math.pow(big, 3.5) * 0.2 + r() * 0.03;
+    e.set((r() - 0.5) * 0.5, r() * 6.283, (r() - 0.5) * 0.5); q.setFromEuler(e);
+    p.set(x, y - size * 0.22, z); s.set(size * (0.8 + r() * 0.5), size * (0.7 + r() * 0.5), size * (0.8 + r() * 0.5));
+    m4.compose(p, q, s);
+    const v = 0.6 + r() * 0.55, w = r();
+    per[n % 3].push({ m: m4.clone(), c: [v * (0.95 + w * 0.12), v * (0.93 + w * 0.06), v * (0.86 - w * 0.06)] });
+    n++;
   }
-  list.forEach(([x, z, s, f], i) => {
-    const geo = rockGeometry(i * 3.7 + 1.1, { sx: 1 + r() * 0.3, sy: f, sz: 0.9 + r() * 0.3, detail });
-    const m = new THREE.Mesh(geo, mat);
-    m.position.set(x, heightAt(x, z) - s * f * 0.15, z);
-    m.scale.setScalar(s);
-    m.rotation.y = r() * Math.PI * 2;
-    m.castShadow = true;
-    m.receiveShadow = true;
+  per.forEach((list, i) => {
+    const inst = new THREE.InstancedMesh(geos[i], mat, list.length);
+    const c = new THREE.Color();
+    list.forEach((o, k) => { inst.setMatrixAt(k, o.m); inst.setColorAt(k, c.setRGB(...o.c)); });
+    inst.castShadow = true; inst.receiveShadow = true; inst.frustumCulled = false;
+    noReflect.push(inst);
+    group.add(inst);
+  });
+
+  // A fallen trunk lying from the bank into the riffle, and an old stump beside the trail.
+  const wood = (id, place) => loadModel(id).then(([v]) => {
+    const d = `models/${id}`, o = { repeat: false, flipY: false };
+    const mat = new THREE.MeshStandardMaterial({ map: tex(A(`${d}/diff.jpg`), o), normalMap: tex(A(`${d}/nor.jpg`), { ...o, srgb: false }), roughness: 0.9, metalness: 0 });
+    bedded(mat, { moss: 0.8, blend: 0.1, key: id });
+    const m = new THREE.Mesh(v.geo, mat);
+    place(m, v);
+    m.castShadow = true; m.receiveShadow = true;
     group.add(m);
   });
-  // Low moss mounds that soften the ground on the near-left bank.
-  const mounds = [[-2.2, 4.0, 0.8], [-3.0, 3.0, 0.8], [2.5, 3.9, 0.6], [-3.4, 4.8, 0.9]];
-  mounds.forEach(([x, z, s], i) => {
-    const geo = rockGeometry(50 + i, { sx: 1.3, sy: 0.22, sz: 1.1, lump: 0.25, detail: Math.min(detail, 12) });
-    const m = new THREE.Mesh(geo, mat);
-    m.position.set(x, heightAt(x, z) - 0.02, z);
-    m.scale.setScalar(s);
-    m.receiveShadow = true;
-    group.add(m);
+  wood('dead_tree_trunk', (m) => {
+    m.scale.setScalar(2.3);
+    m.position.set(-2.6, 0.14, -9.6);
+    m.rotation.set(0.0, -0.45, -0.08);
   });
+  wood('tree_stump_01', (m, v) => {
+    const x = -4.9, z = 8.3;
+    m.scale.setScalar(1.0);
+    m.rotation.y = 1.1;
+    m.position.set(x, heightAt(x, z) - 0.12, z);
+  });
+  group.userData.extra = [{ x: -4.9, z: 8.3, r: 0.7 }];
   return group;
 }

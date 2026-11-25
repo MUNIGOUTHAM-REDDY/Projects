@@ -1,43 +1,10 @@
-// Forest floor: one detailed patch around the pool plus a coarse outer ring.
-// A splat texture (path / pool floor / moss / leaf litter) drives a texture blend in the shader.
+// Forest floor and riverbed: nested height-field patches with a splat-driven material blend
+// (moss, leaf litter, packed-earth path, gravel bars, mud on cut banks, pebbled bed).
 import * as THREE from 'three';
-import { heightAt, poolE, pathMask, fbm, smoothstep } from './world.js';
-import { pbr } from './textures.js';
-import { underwater, chain, dapple } from './shaders.js';
-
-export const SPLAT = { min: -40, size: 80, res: 512 };
-
-function buildSplat() {
-  const { min, size, res } = SPLAT;
-  const data = new Uint8Array(res * res * 4);
-  for (let j = 0; j < res; j++) {
-    for (let i = 0; i < res; i++) {
-      const x = min + (i + 0.5) / res * size;
-      const z = min + (j + 0.5) / res * size;
-      const e = poolE(x, z);
-      const path = pathMask(x, z);
-      const pool = smoothstep(1.0, 0.93, e);
-      // Bright moss: strong on the near-left bank and on the banks just around the water.
-      let moss = 0.5 + 0.9 * fbm(x * 0.35, z * 0.35, 3, 11);
-      moss += 0.6 * smoothstep(1.6, 1.0, e);
-      moss += 0.7 * smoothstep(3.5, 0, Math.hypot(x + 1.6, z - 4.2));
-      moss += 0.6 * smoothstep(2.8, 0, Math.hypot(x - 0.9, z - 3.6));
-      moss += 0.5 * smoothstep(1.5, 1.0, e) * (z > -2 ? 1 : 0);
-      moss = Math.min(1, Math.max(0, moss)) * (1 - path);
-      const litter = Math.min(1, Math.max(0, 0.45 + 1.4 * fbm(x * 0.5 + 9, z * 0.5, 3, 13))) * (1 - pool);
-      const k = (j * res + i) * 4;
-      data[k] = path * 255;
-      data[k + 1] = pool * 255;
-      data[k + 2] = moss * 255;
-      data[k + 3] = litter * 255;
-    }
-  }
-  const t = new THREE.DataTexture(data, res, res, THREE.RGBAFormat);
-  t.magFilter = THREE.LinearFilter;
-  t.minFilter = THREE.LinearFilter;
-  t.needsUpdate = true;
-  return t;
-}
+import { heightAt } from './world.js';
+import { pbr, tex, A } from './textures.js';
+import { underwater, chain, dapple, worldPos } from './shaders.js';
+import { SPLAT } from './bake.js';
 
 function displacedPlane(size, segs, cx, cz, sink = null) {
   const g = new THREE.PlaneGeometry(size, size, segs, segs);
@@ -47,86 +14,112 @@ function displacedPlane(size, segs, cx, cz, sink = null) {
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i), z = p.getZ(i);
     let y = heightAt(x, z);
-    if (sink && sink(x, z)) y -= 0.25;
+    if (sink && sink(x, z)) y -= 0.6;
     p.setY(i, y);
   }
   g.computeVertexNormals();
   return g;
 }
 
-export function createTerrain(quality) {
-  const splat = buildSplat();
-  const grass = pbr('forrest_ground_01');
-  const moss = pbr('aerial_grass_rock');
-  const mossClump = pbr('forest_leaves_02');
+export function createTerrain(quality, splat) {
+  const ground = pbr('forrest_ground_01');
+  const litter = pbr('leaves_forest_ground');
+  const clump = pbr('forest_leaves_02');
   const dirt = pbr('forest_ground_04');
-  const sand = pbr('forrest_sand_01');
-  const pebbles = pbr('river_small_rocks');
+  const peb = pbr('ganges_river_pebbles');
+  const sand = tex(A('forrest_sand_01_diff.jpg'));
+  const mud = tex(A('brown_mud_leaves_01_diff.jpg'));
 
-  const mat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, envMapIntensity: 0.55 });
+  const mat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, envMapIntensity: 0.7 });
+  underwater(mat);
   chain(mat, 'terrain', (s) => {
     Object.assign(s.uniforms, {
-      uSplat: { value: splat }, uSplatMin: { value: SPLAT.min }, uSplatSize: { value: SPLAT.size },
-      tGrass: { value: grass.map }, nGrass: { value: grass.normal },
-      tMoss: { value: moss.map }, nMoss: { value: moss.normal },
-      tClump: { value: mossClump.map }, nClump: { value: mossClump.normal },
+      uSplat: { value: splat }, uSplatBox: { value: new THREE.Vector3(SPLAT.minX, SPLAT.minZ, SPLAT.size) },
+      tGround: { value: ground.map }, nGround: { value: ground.normal },
+      tLitter: { value: litter.map }, nLitter: { value: litter.normal },
+      tClump: { value: clump.map },
       tDirt: { value: dirt.map }, nDirt: { value: dirt.normal },
-      tSand: { value: sand.map }, nSand: { value: sand.normal },
-      tPeb: { value: pebbles.map }, nPeb: { value: pebbles.normal },
+      tPeb: { value: peb.map }, nPeb: { value: peb.normal },
+      tSand: { value: sand }, tMud: { value: mud },
     });
     s.vertexShader = s.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vTW; varying vec3 vTN;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vTN;')
       .replace('#include <project_vertex>', `#include <project_vertex>
-        vTW = (modelMatrix * vec4(transformed, 1.0)).xyz;
         vTN = normalize(mat3(modelMatrix) * objectNormal);`);
     s.fragmentShader = s.fragmentShader
       .replace('#include <common>', `#include <common>
-        varying vec3 vTW; varying vec3 vTN;
-        uniform sampler2D uSplat; uniform float uSplatMin; uniform float uSplatSize;
-        uniform sampler2D tGrass, nGrass, tMoss, nMoss, tClump, nClump, tDirt, nDirt, tSand, nSand, tPeb, nPeb;
-        vec3 tNs; float tAO;
-        float hash12(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
-        float vnoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
-          return mix(mix(hash12(i),hash12(i+vec2(1,0)),f.x), mix(hash12(i+vec2(0,1)),hash12(i+vec2(1,1)),f.x), f.y); }
-        // Two scales blended by noise hides texture tiling.
-        vec3 tri(sampler2D t, vec2 uv, float n){ return mix(texture2D(t, uv).rgb, texture2D(t, uv * 0.37 + 0.31).rgb, n); }
+        varying vec3 vTN;
+        uniform sampler2D uSplat; uniform vec3 uSplatBox;
+        uniform sampler2D tGround, nGround, tLitter, nLitter, tClump, tDirt, nDirt, tPeb, nPeb, tSand, tMud;
+        vec3 tNs; float tRough;
+        // Two scales blended by noise hide the texture tiling.
+        vec4 tri(sampler2D t, vec2 uv, float n){ return mix(texture2D(t, uv), texture2D(t, mat2(0.62, 0.47, -0.47, 0.62) * uv + 0.37), n); }
+        float lum(vec3 c){ return dot(c, vec3(0.3, 0.55, 0.15)); }
         `)
       .replace('#include <map_fragment>', `
-        vec2 suv = (vTW.xz - uSplatMin) / uSplatSize;
+        vec2 suv = (vUW.xz - uSplatBox.xy) / uSplatBox.z;
         vec4 sp = texture2D(uSplat, suv);
-        float big = vnoise(vTW.xz * 0.15);
-        float n2 = vnoise(vTW.xz * 0.8 + 7.0);
-        vec2 uv = vTW.xz;
-        vec3 cG = tri(tGrass, uv * 0.42, big);
-        vec3 cM = tri(tMoss, uv * 0.30, big) * vec3(0.8, 1.3, 0.38);
-        vec3 cC = tri(tClump, uv * 0.55, big) * vec3(0.8, 1.4, 0.4);
-        vec3 cD = tri(tDirt, uv * 0.45, big);
-        vec3 cS = tri(tSand, uv * 0.40, big);
-        vec3 cP = tri(tPeb, uv * 0.50, big);
-        vec3 nG = texture2D(nGrass, uv * 0.42).xyz, nM = texture2D(nMoss, uv * 0.30).xyz, nC = texture2D(nClump, uv * 0.55).xyz;
-        vec3 nD = texture2D(nDirt, uv * 0.45).xyz, nS = texture2D(nSand, uv * 0.40).xyz, nP = texture2D(nPeb, uv * 0.5).xyz;
-        float path = smoothstep(0.15, 0.85, sp.r + (n2 - 0.5) * 0.35);
-        float pool = sp.g;
-        float moss = smoothstep(0.2, 0.8, sp.b + (n2 - 0.5) * 0.4);
-        float litter = smoothstep(0.35, 0.9, sp.a);
-        vec3 col = mix(cG, mix(cM, cC, smoothstep(0.4, 0.7, n2)), moss);
-        vec3 nrm = mix(nG, mix(nM, nC, smoothstep(0.4, 0.7, n2)), moss);
-        col = mix(col, cD * vec3(0.95, 0.9, 0.85), litter * 0.35 * (1.0 - moss));
-        float hum = vnoise(vTW.xz * 0.8 + 11.0) * 0.6 + vnoise(vTW.xz * 2.3) * 0.4;
-        col *= mix(vec3(0.55, 0.62, 0.45), vec3(1.2, 1.25, 1.05), hum) * (1.0 - path) + path;
-        // Path: packed earth with sandy wear in the middle.
-        vec3 pathCol = mix(cD * vec3(1.05, 1.0, 0.9), cS * vec3(1.05, 1.0, 0.88), smoothstep(0.3, 0.9, path) * 0.75);
-        pathCol = vec3(dot(pathCol, vec3(0.33))) * vec3(1.3, 1.12, 0.86) * 1.45;
-        col = mix(col, pathCol, path);
-        nrm = mix(nrm, mix(nD, nS, 0.5), path);
-        // Pool floor: pale limestone sand with scattered pebbles; slightly wet just above the waterline.
-        vec3 floorCol = mix(cS * vec3(1.15, 1.12, 1.0), cP, smoothstep(0.55, 0.8, vnoise(vTW.xz * 0.35 + 3.0)) * 0.6);
-        col = mix(col, floorCol, pool);
-        nrm = mix(nrm, mix(nS, nP, 0.4), pool);
-        float farD = length((vTW.xz - vec2(-0.4, -2.1)) / vec2(6.0, 4.95));
-        col = mix(col, col * vec3(0.42, 0.5, 0.32), smoothstep(1.5, 2.4, farD));
-        float wet = smoothstep(0.35, 0.0, vTW.y) * (1.0 - pool) ;
-        col *= 1.0 - wet * 0.35;
+        float inS = step(0.0, suv.x) * step(suv.x, 1.0) * step(0.0, suv.y) * step(suv.y, 1.0);
+        float big = vnoise(vUW.xz * 0.11);
+        float mid = vnoise(vUW.xz * 0.6 + 7.0);
+        float fine = vnoise(vUW.xz * 3.1 + 2.0);
+        sp = mix(vec4(0.0, 0.35 + 0.5 * big, 0.4 + 0.5 * mid, 1.0), sp, inS);
+        vec2 uv = vUW.xz;
+        float tn = smoothstep(0.3, 0.7, vnoise(vUW.xz * 0.23 + 3.0));
+        vec3 cG = tri(tGround, uv * 0.36, tn).rgb;
+        vec3 cL = tri(tLitter, uv * 0.45, tn).rgb;
+        vec3 cC = tri(tClump, uv * 0.42, tn).rgb;
+        vec3 cD = tri(tDirt, uv * 0.42, tn).rgb;
+        vec3 cP = tri(tPeb, uv * 0.3, tn).rgb;
+        vec3 cP2 = texture2D(tPeb, uv * 0.085 + 0.5).rgb;
+        vec3 cS = tri(tSand, uv * 0.35, tn).rgb;
+        vec3 cM = tri(tMud, uv * 0.4, tn).rgb;
+        vec3 nG = tri(nGround, uv * 0.36, tn).xyz, nL = tri(nLitter, uv * 0.45, tn).xyz;
+        vec3 nD = tri(nDirt, uv * 0.42, tn).xyz, nP = tri(nPeb, uv * 0.3, tn).xyz;
+
+        float y = vUW.y;
+        float slope = 1.0 - clamp(normalize(vTN).y, 0.0, 1.0);
+        float path = smoothstep(0.2, 0.75, sp.r + (mid - 0.5) * 0.4 + (fine - 0.5) * 0.2);
+        float moss = smoothstep(0.3, 0.7, sp.g + (mid - 0.5) * 0.5 + (lum(cG) - 0.3) * 0.6);
+        float lit = smoothstep(0.3, 0.68, sp.b + (fine - 0.5) * 0.35 + (lum(cL) - 0.25) * 0.8);
+
+        // forest floor: mossy soil, beech litter in drifts, bright moss cushions
+        vec3 soil = cG * vec3(0.5, 0.5, 0.36);
+        vec3 mossC = mix(cC * vec3(0.36, 0.66, 0.2), cG * vec3(0.34, 0.62, 0.22), 0.35 + 0.3 * big);
+        mossC *= 0.6 + 0.75 * mid;
+        vec3 col = mix(soil, cL * vec3(0.72, 0.56, 0.42), lit * (1.0 - 0.75 * moss));
+        vec3 nrm = mix(nG, nL, lit * (1.0 - 0.75 * moss));
+        mossC *= 0.45 + 1.7 * lum(cC);
+        col = mix(col, mossC, moss);
+        tRough = mix(0.95, 0.85, moss);
+
+        // the path: packed earth, paler and sandier where feet wear it
+        vec3 pathCol = mix(cD * vec3(1.12, 1.0, 0.86), cS * vec3(0.95, 0.88, 0.76), smoothstep(0.45, 1.0, path) * 0.55);
+        pathCol = mix(pathCol, cL * vec3(0.8, 0.66, 0.5), smoothstep(0.55, 0.8, sp.b) * 0.5 * (1.0 - smoothstep(0.7, 1.0, sp.r)));
+        col = mix(col, pathCol * 0.8, path);
+        nrm = mix(nrm, nD, path);
+
+        // banks: gravel and cobbles near the water on gentle ground, raw mud where the bank is cut
+        float nearW = smoothstep(0.42, 0.08, y + (mid - 0.5) * 0.22 + (lum(cP) - 0.4) * 0.25);
+        float steep = smoothstep(0.25, 0.55, slope);
+        vec3 gravel = mix(cP, cP2, 0.35) * vec3(0.92, 0.9, 0.84);
+        vec3 bank = mix(gravel, cM * vec3(0.8, 0.72, 0.6), steep * smoothstep(0.0, 0.2, y));
+        col = mix(col, bank, nearW * (1.0 - 0.6 * moss * smoothstep(0.1, 0.3, y)));
+        nrm = mix(nrm, mix(nP, nD, steep), nearW);
+        float cut = smoothstep(0.45, 0.8, slope) * step(0.02, y);
+        col = mix(col, cM * vec3(0.62, 0.52, 0.42), cut * 0.85);
+
+        // riverbed: cobbles on the riffles, pale sand and silt in the pools
+        float bed = smoothstep(0.03, -0.1, y);
+        float deep = smoothstep(-0.35, -1.3, y + (mid - 0.5) * 0.4);
+        vec3 bedCol = mix(gravel * 1.05, mix(cS * vec3(1.05, 1.0, 0.9), cP2, 0.25), deep * 0.8);
+        bedCol = mix(bedCol, bedCol * vec3(0.55, 0.62, 0.4), smoothstep(0.55, 0.8, vnoise(vUW.xz * 0.5 + 9.0)) * 0.5); // algae
+        col = mix(col, bedCol, bed);
+        nrm = mix(nrm, nP, bed);
+
+        // contact shade under rocks, trunks and plants; distant ground falls into forest shade
+        col *= mix(0.42, 1.0, sp.a);
+        col *= 0.7 + 0.55 * big;
         tNs = nrm * 2.0 - 1.0;
         diffuseColor.rgb *= col;
       `)
@@ -135,24 +128,25 @@ export function createTerrain(quality) {
           vec3 wn = normalize(vTN);
           vec3 T = normalize(vec3(1.0, 0.0, 0.0) - wn * wn.x);
           vec3 B = cross(wn, T);
-          vec3 pw = normalize(T * tNs.x * 1.4 - B * tNs.y * 1.4 + wn * tNs.z);
+          vec3 pw = normalize(T * tNs.x * 2.2 - B * tNs.y * 2.2 + wn * tNs.z);
           normal = normalize((viewMatrix * vec4(pw, 0.0)).xyz);
         }`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-        roughnessFactor = mix(roughnessFactor, 0.55, wet);`);
+        roughnessFactor = tRough;`);
   });
-  underwater(mat);
   dapple(mat);
 
-  const inner = 40;
-  const segs = quality === 'low' ? 220 : 400;
-  const innerGeo = displacedPlane(inner, segs, -0.5, -1);
-  const outerGeo = displacedPlane(260, quality === 'low' ? 90 : 140, 0, 0, (x, z) => Math.abs(x + 0.5) < inner / 2 - 1 && Math.abs(z + 1) < inner / 2 - 1);
-
+  const hi = quality !== 'low';
+  const inner = { size: 48, cx: -1, cz: -4 };
+  const midR = { size: 150, cx: -6, cz: -20 };
+  const inside = (b, m) => (x, z) => Math.abs(x - b.cx) < b.size / 2 - m && Math.abs(z - b.cz) < b.size / 2 - m;
+  const geos = [
+    displacedPlane(inner.size, hi ? 400 : 240, inner.cx, inner.cz),
+    displacedPlane(midR.size, hi ? 280 : 180, midR.cx, midR.cz, inside(inner, 0.6)),
+    displacedPlane(520, 90, 0, 0, inside(midR, 6)),
+  ];
   const group = new THREE.Group();
-  const a = new THREE.Mesh(innerGeo, mat);
-  const b = new THREE.Mesh(outerGeo, mat);
-  for (const m of [a, b]) { m.receiveShadow = true; group.add(m); }
-  group.userData.splat = splat;
+  for (const g of geos) { const m = new THREE.Mesh(g, mat); m.receiveShadow = true; group.add(m); }
+  group.userData.material = mat;
   return group;
 }

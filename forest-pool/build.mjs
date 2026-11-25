@@ -1,7 +1,7 @@
 // Bundles src/ into one inline module and writes dist/index.html with the assets beside it.
 // three.js stays external (loaded from jsDelivr via the page's import map).
 import { build } from 'esbuild';
-import { readFileSync, writeFileSync, mkdirSync, cpSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, cpSync, rmSync, readdirSync } from 'node:fs';
 
 const out = await build({
   entryPoints: ['src/main.js'],
@@ -18,9 +18,12 @@ rmSync('dist', { recursive: true, force: true });
 mkdirSync('dist', { recursive: true });
 writeFileSync('dist/index.html', html);
 cpSync('assets', 'dist/assets', { recursive: true });
-// Artifacts only serve web file types, so inline the fern's binary buffer into a .json glTF.
-const gltf = JSON.parse(readFileSync('assets/fern/fern_02.gltf', 'utf8'));
-for (const b of gltf.buffers) b.uri = 'data:application/octet-stream;base64,' + readFileSync('assets/fern/' + b.uri).toString('base64');
-writeFileSync('dist/assets/fern/fern_02.json', JSON.stringify(gltf));
-rmSync('dist/assets/fern/fern_02.gltf'); rmSync('dist/assets/fern/fern_02.bin');
+// Artifacts only serve web file types, so every glTF becomes a .json with its buffer inlined as base64.
+for (const id of readdirSync('assets/models')) {
+  const dir = `assets/models/${id}`;
+  const gltf = JSON.parse(readFileSync(`${dir}/${id}.gltf`, 'utf8'));
+  for (const b of gltf.buffers) b.uri = 'data:application/octet-stream;base64,' + readFileSync(`${dir}/${b.uri}`).toString('base64');
+  writeFileSync(`dist/${dir}/${id}.json`, JSON.stringify(gltf));
+  rmSync(`dist/${dir}/${id}.gltf`); rmSync(`dist/${dir}/${id}.bin`);
+}
 console.log(`dist/index.html ${(html.length / 1024).toFixed(1)} KB`);

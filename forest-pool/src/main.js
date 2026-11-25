@@ -1,115 +1,98 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { G } from './shaders.js';
-import { manager, setAnisotropy, A } from './textures.js';
+import { manager, setAnisotropy } from './textures.js';
 import { heightAt, WATER_Y } from './world.js';
+import { buildBake, buildSplat } from './bake.js';
 import { createTerrain } from './terrain.js';
 import { createWater, excludeFromReflection } from './water.js';
 import { createTrees } from './trees.js';
-import { createGrass, createFerns } from './vegetation.js';
+import { createGroundCover } from './vegetation.js';
 import { createRocks } from './rocks.js';
-import { createShafts, createMotes, createSky } from './atmosphere.js';
+import { createFallingLeaves } from './leaves.js';
+import { createMotes, createSky, FOG_COLOR } from './atmosphere.js';
+import { createPipeline } from './post.js';
+import { setDetail } from './foliage.js';
+import { modelJobs } from './models.js';
 
 const params = new URLSearchParams(location.search);
 const STILL = params.has('still');
 const isMobile = matchMedia('(pointer: coarse)').matches;
-let quality = params.get('q') || (isMobile ? 'low' : 'high');
+const quality = params.get('q') || (isMobile ? 'low' : 'high');
+const flag = (k) => params.get(k) !== '0';
 
 // --- Renderer -------------------------------------------------------------
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: STILL });
-renderer.setPixelRatio(Math.min(devicePixelRatio, quality === 'low' ? 1.25 : 1.75));
+const SS = Number(params.get('ss') || 0);
+renderer.setPixelRatio(SS || Math.min(devicePixelRatio, quality === 'low' ? 1.25 : 1.75));
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.1;
+renderer.toneMappingExposure = Number(params.get('exp') || 1.1);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 setAnisotropy(Math.min(8, renderer.capabilities.getMaxAnisotropy()));
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(new THREE.Color('#56703a'), 0.0095);
+scene.fog = new THREE.FogExp2(FOG_COLOR, Number(params.get("fog") || 0.0048));
 
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.05, 400);
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 500);
 
 // --- Light ----------------------------------------------------------------
-const SUN_COLOR = new THREE.Color(1.0, 0.94, 0.8);
-const sun = new THREE.DirectionalLight(SUN_COLOR, 4.6);
+const SUN_COLOR = new THREE.Color(1.0, 0.93, 0.8);
+const sun = new THREE.DirectionalLight(SUN_COLOR, Number(params.get('sun') || 8.5));
 const sunTarget = new THREE.Object3D();
-sunTarget.position.set(-0.4, 0, -1.5);
+sunTarget.position.set(-0.5, 0, -1.5);
+G.uShadowCentre.value.copy(sunTarget.position);
+const SHADOW_HALF = quality === 'low' ? 24 : 30;
+G.uShadowRadius.value = SHADOW_HALF;
 scene.add(sunTarget);
 sun.target = sunTarget;
-sun.position.copy(sunTarget.position).addScaledVector(G.uSunDir.value, 60);
+sun.position.copy(sunTarget.position).addScaledVector(G.uSunDir.value, 80);
 sun.castShadow = true;
 sun.shadow.mapSize.setScalar(quality === 'low' ? 2048 : 4096);
 const sc = sun.shadow.camera;
-sc.left = -24; sc.right = 24; sc.top = 24; sc.bottom = -24; sc.near = 20; sc.far = 110;
-sun.shadow.bias = -0.0003;
-sun.shadow.normalBias = 0.025;
-sun.shadow.radius = 3;
+sc.left = -SHADOW_HALF; sc.right = SHADOW_HALF; sc.top = SHADOW_HALF; sc.bottom = -SHADOW_HALF; sc.near = 20; sc.far = 150;
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.03;
+sun.shadow.radius = 2.5;
 scene.add(sun);
-const hemi = new THREE.HemisphereLight(new THREE.Color('#d8ecc0'), new THREE.Color('#2a2c20'), 0.22);
-scene.add(hemi);
-
-/* environment light is built from the sky dome after it is created (see below) */
 
 // --- World ----------------------------------------------------------------
-const terrain = createTerrain(quality);
-const water = createWater(quality);
+buildBake();
 const trees = createTrees(quality);
-const grass = createGrass(quality);
-const ferns = createFerns(quality);
 const rocks = createRocks(quality);
-const shafts = createShafts();
-const motes = createMotes(quality === 'low' ? 400 : 900);
+const cover = createGroundCover(quality);
+const splat = buildSplat([...(trees.userData.contacts || []), ...(cover.userData.contacts || [])]);
+const terrain = createTerrain(quality, splat);
+const water = createWater(quality, sun);
+const falling = createFallingLeaves(quality);
+const motes = createMotes(quality === 'low' ? 300 : 700);
 const sky = createSky();
 {
-  // Image-based light from our own canopy sky, so shade picks up green forest light rather than blue sky.
+  // Image-based light from a canopy-filtered sky, so shade picks up green forest light.
   const envScene = new THREE.Scene();
-  const envSky = createSky({ forEnv: true });
-  envScene.add(envSky);
+  envScene.add(createSky({ forEnv: true }));
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(envScene, 0.02).texture;
-  scene.environmentIntensity = 0.5;
+  scene.environmentIntensity = Number(params.get('env') || 1.35);
   pmrem.dispose();
 }
-scene.add(sky, terrain, water, trees, grass, ferns, rocks, shafts, motes);
-excludeFromReflection(water, [grass, shafts, motes]);
+scene.add(sky, terrain, water, trees, rocks, cover, falling, motes);
+excludeFromReflection(water, [motes, falling, cover.userData.noReflect, trees.userData.noReflect, rocks.userData.noReflect], trees.userData.thinned);
 
-// --- Post -----------------------------------------------------------------
-const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: quality === 'low' ? 0 : 4 }));
-composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.32, 0.65, 0.92);
-composer.addPass(bloom);
-composer.addPass(new OutputPass());
-const grade = new ShaderPass({
-  uniforms: { tDiffuse: { value: null }, uVig: { value: 0.32 }, uSat: { value: 1.1 }, uRes: { value: new THREE.Vector2() } },
-  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-  fragmentShader: /* glsl */ `
-    uniform sampler2D tDiffuse; uniform float uVig; uniform float uSat; varying vec2 vUv;
-    void main(){
-      vec3 c = texture2D(tDiffuse, vUv).rgb;
-      float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-      c = mix(vec3(l), c, uSat);
-      c = mix(c, c * c * (3.0 - 2.0 * c), 0.3);
-      vec2 d = vUv - 0.5;
-      c *= 1.0 - uVig * dot(d, d) * 2.2;
-      gl_FragColor = vec4(c, 1.0);
-    }`,
-});
-composer.addPass(grade);
+const pipeline = createPipeline({ renderer, scene, camera, water, sun, quality, still: STILL });
+pipeline.scenePass.ao = flag('ao');
+pipeline.scenePass.volumetrics = flag('vol');
+if (!flag('dof')) pipeline.scenePass.dof = false;
 
 // --- Camera presets & controls -------------------------------------------
 const PRESETS = {
-  trail: { label: 'Trail', pos: [-0.25, 1.7, 6.5], target: [-0.25, 0.12, -3.5], fov: 60 },
-  edge: { label: "Water's edge", pos: [0.35, 0.42, 2.55], target: [-0.6, 0.15, -6], fov: 55 },
-  farbank: { label: 'Far bank', pos: [1.2, 1.6, -7.4], target: [-0.4, 0.5, 3.0], fov: 58 },
-  canopy: { label: 'Canopy', pos: [-0.5, 1.1, 3.3], target: [-1.3, 9.0, 0.2], fov: 72 },
-  above: { label: 'Above', pos: [-0.4, 17, 6.5], target: [-0.4, 0, -2.2], fov: 50 },
+  trail: { label: 'Trail', pos: [0.25, 1.72, 8.4], target: [-0.45, 1.5, -3.0], fov: 60, focus: 9 },
+  edge: { label: "Water's edge", pos: [0.25, 0.5, 1.5], target: [1.6, 0.35, -9.0], fov: 52, focus: 7 },
+  farbank: { label: 'Far bank', pos: [-7.6, 1.3, -6.6], target: [-0.2, 1.5, 3.6], fov: 56, focus: 11 },
+  canopy: { label: 'Canopy', pos: [-1.4, 1.2, 6.2], target: [-3.2, 8.5, 2.6], fov: 68, focus: 7 },
+  above: { label: 'Above', pos: [-5.5, 10.5, 0.5], target: [1.6, 0, -7.5], fov: 52, focus: 14 },
 };
 
 const controls = new OrbitControls(camera, canvas);
@@ -121,21 +104,29 @@ controls.rotateSpeed = 0.6;
 controls.zoomSpeed = 0.8;
 controls.panSpeed = 0.8;
 
+let tween = null;
+let focus = 9;
+let baseFov = 56;
+function applyFov() {
+  const minV = 2 * Math.atan(Math.tan((72 * Math.PI) / 360) / camera.aspect) * 180 / Math.PI;
+  camera.fov = Math.min(88, Math.max(baseFov, minV));
+  camera.updateProjectionMatrix();
+}
 function setPreset(name, instant = false) {
   const p = PRESETS[name];
   if (!p) return;
-  const from = { pos: camera.position.clone(), target: controls.target.clone(), fov: camera.fov };
-  const to = { pos: new THREE.Vector3(...p.pos), target: new THREE.Vector3(...p.target), fov: p.fov };
+  const from = { pos: camera.position.clone(), target: controls.target.clone(), fov: baseFov, focus };
+  const to = { pos: new THREE.Vector3(...p.pos), target: new THREE.Vector3(...p.target), fov: p.fov, focus: p.focus };
   document.querySelectorAll('[data-preset]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.preset === name));
   if (instant) {
-    camera.position.copy(to.pos); controls.target.copy(to.target); camera.fov = to.fov; camera.updateProjectionMatrix();
+    camera.position.copy(to.pos); controls.target.copy(to.target); baseFov = to.fov; applyFov(); focus = to.focus;
     tween = null;
     return;
   }
-  tween = { from, to, t: 0, dur: 2.4 };
+  tween = { from, to, t: 0, dur: 2.6 };
 }
-let tween = null;
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+controls.addEventListener('start', () => { tween = null; focus = -1; });
 
 // WASD / arrow keys walk the camera and its focus point together.
 const keys = new Set();
@@ -155,11 +146,11 @@ function walk(dt) {
   if (mv.lengthSq() === 0) return;
   mv.normalize().multiplyScalar(dt * (keys.has('shift') ? 6 : 2.2));
   camera.position.add(mv); controls.target.add(mv);
-  tween = null;
+  tween = null; focus = -1;
 }
 
 function keepAboveGround() {
-  const g = Math.max(heightAt(camera.position.x, camera.position.z), WATER_Y) + 0.18;
+  const g = Math.max(heightAt(camera.position.x, camera.position.z), WATER_Y) + 0.22;
   if (camera.position.y < g) camera.position.y = g;
 }
 
@@ -174,23 +165,28 @@ manager.onProgress = (_, loaded, total) => {
   if (ui.bar) ui.bar.style.transform = `scaleX(${p / 100})`;
   if (ui.pct) ui.pct.textContent = `${p}%`;
 };
-let ready = false;
-manager.onLoad = () => {
+// Ready once every model has been turned into meshes and the textures those meshes asked for have arrived.
+let ready = false, modelsDone = false, queueEmpty = false;
+function start() {
+  if (ready || !modelsDone || !queueEmpty) return;
   ready = true;
   ui.loader?.classList.add('done');
   if (STILL) {
-    // Let shaders compile and the reflection settle before capture.
+    // Let shaders compile, the shadow map and the reflection settle before capture.
     let n = 0;
-    const tick = () => { renderFrame(0); if (++n < 4) requestAnimationFrame(tick); else window.__ready = true; };
+    const tick = () => { renderFrame(0); if (++n < 3) requestAnimationFrame(tick); else window.__ready = true; };
     requestAnimationFrame(tick);
   }
-};
+}
+manager.onStart = () => { queueEmpty = false; };
+manager.onLoad = () => { queueEmpty = true; start(); };
+Promise.all(modelJobs).then(() => { modelsDone = true; start(); });
 
 document.querySelectorAll('[data-preset]').forEach((b) => b.addEventListener('click', () => setPreset(b.dataset.preset)));
 const toggles = {
   wind: (on) => (G.uWind.value = on ? 1 : 0),
-  rays: (on) => { shafts.visible = on; motes.visible = on; },
-  drift: (on) => { controls.autoRotate = on; controls.autoRotateSpeed = 0.35; },
+  rays: (on) => { pipeline.scenePass.volumetrics = on; motes.visible = on; },
+  drift: (on) => { controls.autoRotate = on; controls.autoRotateSpeed = 0.3; },
 };
 document.querySelectorAll('[data-toggle]').forEach((b) => {
   b.addEventListener('click', () => {
@@ -205,10 +201,9 @@ document.getElementById('hide-ui')?.addEventListener('click', () => document.bod
 function resize() {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h);
-  composer.setSize(w, h);
-  bloom.setSize(w, h);
+  pipeline.setSize(w, h);
   camera.aspect = w / h;
-  camera.updateProjectionMatrix();
+  applyFov();
 }
 addEventListener('resize', resize);
 resize();
@@ -219,11 +214,13 @@ if (STILL) {
   document.body.classList.add('clean', 'still');
   G.uTime.value = Number(params.get('t') || 14);
   if (params.has('cam')) {
-    const [px, py, pz, tx, ty, tz, fov] = params.get('cam').split(',').map(Number);
+    const [px, py, pz, tx, ty, tz, fov, fc] = params.get('cam').split(',').map(Number);
     camera.position.set(px, py, pz); controls.target.set(tx, ty, tz);
-    if (fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
+    if (fov) { baseFov = fov; applyFov(); }
+    focus = fc || -1;
   }
 }
+falling.userData.update(0, STILL ? G.uTime.value : 0, true);
 
 const clock = new THREE.Clock();
 function renderFrame(dt) {
@@ -233,20 +230,45 @@ function renderFrame(dt) {
     const k = ease(Math.min(1, tween.t));
     camera.position.lerpVectors(tween.from.pos, tween.to.pos, k);
     controls.target.lerpVectors(tween.from.target, tween.to.target, k);
-    camera.fov = THREE.MathUtils.lerp(tween.from.fov, tween.to.fov, k);
-    camera.updateProjectionMatrix();
+    baseFov = THREE.MathUtils.lerp(tween.from.fov, tween.to.fov, k);
+    focus = THREE.MathUtils.lerp(tween.from.focus > 0 ? tween.from.focus : tween.to.focus, tween.to.focus, k);
+    applyFov();
     if (tween.t >= 1) tween = null;
   }
   walk(dt);
   controls.update(dt);
   keepAboveGround();
-  composer.render(dt);
+  if (!STILL) falling.userData.update(dt, G.uTime.value, false);
+  const cu = pipeline.scenePass.compMat.uniforms;
+  // Presets carry a focus distance; when exploring freely, focus on the orbit target and ease the blur off.
+  const want = focus > 0 ? focus : camera.position.distanceTo(controls.target);
+  cu.uFocus.value += (want - cu.uFocus.value) * (dt > 0 ? Math.min(1, dt * 4) : 1);
+  cu.uAperture.value = focus > 0 ? 1 : 0.6;
+  pipeline.render(dt, G.uTime.value);
+}
+// Dynamic resolution: if the GPU cannot hold a smooth frame rate, trade pixels for it (and take them back when it can).
+const PR_MAX = renderer.getPixelRatio(), PR_MIN = Math.min(PR_MAX, 0.6);
+let ema = 1 / 60, sinceAdjust = 0, detail = 1;
+function adapt(raw) {
+  ema += (raw - ema) * 0.05;
+  if (++sinceAdjust < 45) return;
+  const pr = renderer.getPixelRatio();
+  let next = pr;
+  if (ema > 1 / 30) {
+    // too slow: first thin the instanced foliage (it dominates the triangle count), then shed pixels
+    if (detail > 0.45) { detail = Math.max(0.45, detail - 0.15); setDetail(detail); sinceAdjust = 0; ema = 1 / 40; return; }
+    if (pr > PR_MIN) next = Math.max(PR_MIN, pr * 0.85);
+  } else if (ema < 1 / 52) {
+    if (pr < PR_MAX) next = Math.min(PR_MAX, pr * 1.08);
+  }
+  if (next !== pr) { renderer.setPixelRatio(next); resize(); sinceAdjust = 0; }
 }
 function loop() {
-  const dt = Math.min(0.05, clock.getDelta());
-  if (ready && !STILL) renderFrame(dt);
+  const raw = clock.getDelta();
+  const dt = Math.min(0.05, raw);
+  if (ready && !STILL) { renderFrame(dt); if (document.visibilityState === 'visible' && raw < 2) adapt(raw); }
   requestAnimationFrame(loop);
 }
 loop();
 
-window.__scene = { scene, camera, controls, renderer, trees, setPreset };
+window.__scene = { scene, camera, controls, renderer, trees, setPreset, pipeline, sun };

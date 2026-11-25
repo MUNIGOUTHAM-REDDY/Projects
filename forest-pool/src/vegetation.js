@@ -1,177 +1,208 @@
-// Ground cover: instanced grass blades and photoscanned ferns (Poly Haven fern_02, CC0).
+// Ground cover, all rooted into the terrain: photoscanned ferns, grass tufts and celandine
+// (Poly Haven, CC0), fallen sticks, and a carpet of fallen beech leaves.
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { heightAt, poolE, pathMask, fbm, rng, HERO_TREES } from './world.js';
-import { manager, tex, A } from './textures.js';
-import { wind, chain } from './shaders.js';
+import { heightAt, river, bankE, pathMask, pathDist, fbm, rng, smoothstep, HERO_TREES, ROCKS } from './world.js';
+import { tex, A } from './textures.js';
+import { plantMaterials, litterMaterials, leafGeometry, Instances, registerLod } from './foliage.js';
+import { loadModel } from './models.js';
+import { underwater, dapple } from './shaders.js';
 
-function bladeGeometry() {
-  // A tapered, slightly curved blade, 1 m tall, built from 4 segments.
-  const segs = 4, pos = [], uv = [], nor = [], idx = [];
-  for (let i = 0; i <= segs; i++) {
-    const t = i / segs;
-    const w = 0.018 * (1 - t * 0.9);
-    const bend = t * t * 0.18;
-    pos.push(-w, t, bend, w, t, bend);
-    uv.push(0, t, 1, t);
-    nor.push(0, 0.9, 0.35, 0, 0.9, 0.35);
-  }
-  for (let i = 0; i < segs; i++) {
-    const a = i * 2;
-    idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.setIndex(idx);
-  return g;
+const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), s = new THREE.Vector3();
+
+function instanced(variants, lists, materials, { cast = true } = {}) {
+  const out = [];
+  variants.forEach((v, i) => {
+    const list = lists[i];
+    if (!list || !list.length) return;
+    const inst = new THREE.InstancedMesh(v.geo, materials.mat, list.length);
+    const c = new THREE.Color();
+    list.forEach((o, k) => {
+      e.set(o.tx || 0, o.rot, o.tz || 0); q.setFromEuler(e);
+      p.set(o.x, o.y, o.z); s.set(o.s, o.s * (o.sy || 1), o.s);
+      inst.setMatrixAt(k, m4.compose(p, q, s));
+      inst.setColorAt(k, c.setRGB(o.c[0], o.c[1], o.c[2]));
+    });
+    inst.castShadow = cast; inst.receiveShadow = true; inst.frustumCulled = false;
+    if (materials.depth) inst.customDepthMaterial = materials.depth;
+    registerLod(inst);
+    out.push(inst);
+  });
+  return out;
 }
 
-export function createGrass(quality) {
-  const count = quality === 'low' ? 45000 : 110000;
-  const r = rng(77);
-  const mat = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness: 1, envMapIntensity: 0.3, emissive: new THREE.Color(0.03, 0.08, 0.01) });
-  wind(mat, { amount: 0.12, useUvY: true, freq: 1.6 });
-  chain(mat, 'grassgrad', (s) => {
-    // Darker at the root, sunlit yellow-green at the tip.
-    s.fragmentShader = s.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
-      diffuseColor.rgb *= mix(0.5, 1.25, vUv.y);`);
-    s.vertexShader = s.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\n vUv = uv;');
-    s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\n#ifndef USE_UV\nvarying vec2 vUv;\n#endif');
-    s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\n#ifndef USE_UV\nvarying vec2 vUv;\n#endif');
+const nearRock = (x, z, pad) => ROCKS.some((k) => Math.hypot(k.x - x, k.z - z) < k.r * 0.85 + pad);
+const nearHero = (x, z, d) => Math.hypot(x - HERO_TREES.left.x, z - HERO_TREES.left.z) < d || Math.hypot(x - HERO_TREES.right.x, z - HERO_TREES.right.z) < d;
+
+export function createGroundCover(quality) {
+  const hi = quality !== 'low';
+  const group = new THREE.Group();
+  const contacts = [];
+  const noReflect = [];
+  const r = rng(555);
+
+  // --- Ferns: beds around boulders and tree bases and along the banks -------------------
+  const ferns = [];
+  const addFern = (x, z, sc) => {
+    if (bankE(x, z) < 0.25 || pathMask(x, z) > 0.2 || nearRock(x, z, -0.05) || nearHero(x, z, 0.55)) return false;
+    const v = 0.8 + r() * 0.4;
+    ferns.push({ x, z, y: heightAt(x, z) - 0.04 * sc, s: sc, sy: 0.85 + r() * 0.5, rot: r() * 6.283, tx: (r() - 0.5) * 0.16, tz: (r() - 0.5) * 0.16, c: [v * (0.9 + r() * 0.2), v, v * (0.8 + r() * 0.3)] });
+    contacts.push({ x, z, r: 0.3 * sc, dark: 0.4, moss: 0.25 });
+    return true;
+  };
+  for (const k of ROCKS) {
+    if (k.kind === 'r') continue;
+    const n = 2 + Math.floor(r() * 4);
+    for (let i = 0; i < n; i++) { const a = r() * 6.283, d = k.r * (0.95 + r() * 0.7); addFern(k.x + Math.cos(a) * d, k.z + Math.sin(a) * d, 0.7 + r() * 0.8); }
+  }
+  for (const key in HERO_TREES) {
+    const h = HERO_TREES[key];
+    for (let i = 0; i < 9; i++) { const a = r() * 6.283, d = 0.8 + r() * 1.5; addFern(h.x + Math.cos(a) * d, h.z + Math.sin(a) * d, 0.8 + r() * 0.8); }
+  }
+  let tries = 0;
+  const fernTarget = hi ? 520 : 240;
+  while (ferns.length < fernTarget && tries++ < 20000) {
+    const a = r() * 6.283, d = 2 + Math.pow(r(), 0.8) * 34;
+    const x = -1 + Math.cos(a) * d, z = -3 + Math.sin(a) * d;
+    const e2 = bankE(x, z);
+    const dens = 0.25 + 0.75 * smoothstep(7, 1, e2) + 0.9 * Math.max(0, fbm(x * 0.13, z * 0.13, 2, 60));
+    if (r() > dens) continue;
+    addFern(x, z, 0.75 + r() * 0.95);
+  }
+  loadModel('fern_02').then((variants) => {
+    const lists = variants.map(() => []);
+    ferns.forEach((f, i) => lists[(i * 7 + (i >> 2)) % variants.length].push(f));
+    const mats = plantMaterials('fern_02', { amount: 0.05, flutter: 0.006, tint: [0.62, 0.78, 0.42] });
+    const meshes = instanced(variants, lists, mats);
+    noReflect.push(...meshes);
+    group.add(...meshes);
   });
-  const mesh = new THREE.InstancedMesh(bladeGeometry(), mat, count);
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), s = new THREE.Vector3(), p = new THREE.Vector3();
-  const c = new THREE.Color();
-  let n = 0, tries = 0;
-  while (n < count && tries++ < count * 8) {
-    // Concentrate blades near the pool and the viewer.
-    const rad = Math.pow(r(), 1.35) * 26;
-    const ang = r() * Math.PI * 2;
-    const x = -0.4 + Math.cos(ang) * rad;
-    const z = 0.5 + Math.sin(ang) * rad * 0.95;
-    const pe = poolE(x, z);
-    if (pe < 1.0) continue;
+
+  // --- Grass tufts: along the banks, the trail's shoulders and in brighter gaps ---------
+  const grass = [];
+  const grassTarget = hi ? 3400 : 1200;
+  tries = 0;
+  while (grass.length < grassTarget && tries++ < 60000) {
+    const a = r() * 6.283, d = Math.pow(r(), 0.85) * 26;
+    const x = -0.5 + Math.cos(a) * d, z = 1 + Math.sin(a) * d;
+    const e2 = bankE(x, z);
+    if (e2 < 0.08) continue;
     const pm = pathMask(x, z);
-    if (pm > 0.25 && r() < 0.97) continue;
-    // Patchy clumps.
-    const clump = 0.5 + fbm(x * 0.6, z * 0.6, 3, 21) * 1.6 + (pe < 1.35 ? 0.35 : 0);
-    if (r() > clump) continue;
-    if (Math.hypot(x - HERO_TREES.left.x, z - HERO_TREES.left.z) < 0.5) continue;
-    if (Math.hypot(x - HERO_TREES.right.x, z - HERO_TREES.right.z) < 0.75) continue;
+    if (pm > 0.35) continue;
+    const pd = pathDist(x, z);
+    let dens = 0.12 + 0.75 * smoothstep(2.6, 0.2, e2) + 0.55 * smoothstep(1.6, 0.6, pd) * (z > 2 ? 1 : 0) + 0.9 * Math.max(0, fbm(x * 0.2, z * 0.2, 2, 21));
+    if (r() > dens) continue;
+    if (nearRock(x, z, -0.1) || nearHero(x, z, 0.45)) continue;
+    const v = 0.75 + r() * 0.4, dry = r();
+    grass.push({ x, z, y: heightAt(x, z) - 0.015, s: 0.8 + r() * 0.8 + smoothstep(1.5, 0.1, e2) * 0.35, sy: 0.8 + r() * 0.5, rot: r() * 6.283, tx: (r() - 0.5) * 0.2, tz: (r() - 0.5) * 0.2, c: [v * (0.85 + dry * 0.25), v * 0.95, v * (0.6 + r() * 0.25)] });
+  }
+  const fuzz = [];
+  const fuzzTarget = hi ? 9000 : 2500;
+  tries = 0;
+  while (fuzz.length < fuzzTarget && tries++ < fuzzTarget * 8) {
+    const a = r() * 6.283, d = Math.pow(r(), 0.75) * 17;
+    const x = Math.cos(a) * d, z = 3 + Math.sin(a) * d;
+    if (bankE(x, z) < 0.05 || pathMask(x, z) > 0.5) continue;
+    if (r() > 0.45 + 1.4 * fbm(x * 0.45, z * 0.45, 2, 91)) continue;
+    const v = 0.7 + r() * 0.45;
+    fuzz.push({ x, z, y: heightAt(x, z) - 0.008, s: 1.0 + r() * 1.6, sy: 0.7 + r() * 0.8, rot: r() * 6.283, tx: (r() - 0.5) * 0.3, tz: (r() - 0.5) * 0.3, c: [v * 0.9, v, v * 0.6] });
+  }
+  loadModel('grass_medium_01').then((variants) => {
+    // light-weight pieces only; the big clumps are thousands of triangles each
+    const use = variants.filter((v) => /tall|tiny/.test(v.name));
+    const lists = use.map(() => []);
+    grass.forEach((g, i) => {
+      let k = Math.floor(r() * use.length);
+      if (/tiny/.test(use[k].name) && r() < 0.6) k = Math.floor(r() * use.length);
+      lists[k].push({ ...g, s: g.s * (/tiny/.test(use[k].name) ? 1.6 : 1) });
+    });
+    // a fuzz of tiny tufts so mossy ground is never a bare painted plane
+    const tiny = use.map((v, i) => (/tiny/.test(v.name) ? i : -1)).filter((i) => i >= 0);
+    fuzz.forEach((g) => lists[tiny[Math.floor(r() * tiny.length)]].push(g));
+    const mats = plantMaterials('grass_medium_01', { amount: 0.18, flutter: 0.01, tint: [0.62, 0.78, 0.4], shadow: false });
+    const meshes = instanced(use, lists, mats, { cast: false });
+    noReflect.push(...meshes);
+    group.add(...meshes);
+  });
+
+  // --- Celandine: low glossy leaves and a few yellow flowers in damp, mossy patches ------
+  const herbs = [];
+  const herbTarget = hi ? 1000 : 400;
+  tries = 0;
+  while (herbs.length < herbTarget && tries++ < 40000) {
+    const a = r() * 6.283, d = Math.pow(r(), 0.8) * 24;
+    const x = -0.5 + Math.cos(a) * d, z = 1 + Math.sin(a) * d;
+    if (bankE(x, z) < 0.3 || pathMask(x, z) > 0.15) continue;
+    const patch = fbm(x * 0.3 + 50, z * 0.3, 3, 77);
+    if (patch < 0.06 + r() * 0.1) continue;
+    if (nearRock(x, z, -0.1) || nearHero(x, z, 0.5)) continue;
+    const v = 0.8 + r() * 0.35;
+    herbs.push({ x, z, y: heightAt(x, z) - 0.012, s: 0.8 + r() * 0.55, sy: 0.9 + r() * 0.3, rot: r() * 6.283, tx: (r() - 0.5) * 0.15, tz: (r() - 0.5) * 0.15, c: [v, v, v] });
+  }
+  loadModel('celandine_01').then((variants) => {
+    const use = variants.filter((v) => /_a_|_b_|_e_/.test(v.name));
+    const lists = use.map(() => []);
+    herbs.forEach((h, i) => lists[i % use.length].push(h));
+    const mats = plantMaterials('celandine_01', { amount: 0.06, flutter: 0.004, tint: [0.7, 0.8, 0.5], shadow: false });
+    const meshes = instanced(use, lists, mats, { cast: false });
+    noReflect.push(...meshes);
+    group.add(...meshes);
+  });
+
+  // --- Fallen sticks --------------------------------------------------------------------
+  const sticks = [];
+  tries = 0;
+  while (sticks.length < (hi ? 110 : 50) && tries++ < 5000) {
+    const a = r() * 6.283, d = Math.pow(r(), 0.7) * 26;
+    const x = -0.5 + Math.cos(a) * d, z = 1 + Math.sin(a) * d;
+    if (bankE(x, z) < 0.4 || nearRock(x, z, 0) || nearHero(x, z, 0.6)) continue;
+    const v = 0.7 + r() * 0.4;
+    sticks.push({ x, z, y: heightAt(x, z) - 0.03, s: 0.6 + r() * 0.7, rot: r() * 6.283, tx: (r() - 0.5) * 0.12, tz: (r() - 0.5) * 0.12, c: [v, v * 0.97, v * 0.9] });
+  }
+  loadModel('dry_branches_medium_01').then((variants) => {
+    const d = 'models/dry_branches_medium_01', o = { repeat: false, flipY: false };
+    const mat = new THREE.MeshStandardMaterial({ map: tex(A(`${d}/diff.jpg`), o), normalMap: tex(A(`${d}/nor.jpg`), { ...o, srgb: false }), roughness: 0.9, metalness: 0 });
+    underwater(mat); dapple(mat);
+    const lists = variants.map(() => []);
+    sticks.forEach((k, i) => lists[i % variants.length].push(k));
+    const meshes = instanced(variants, lists, { mat, depth: null });
+    group.add(...meshes);
+  });
+
+  // --- Leaf litter: thousands of individual fallen leaves, copper-brown through ochre ----
+  const litter = new Instances();
+  const litterTarget = hi ? 22000 : 7000;
+  const nrm = new THREE.Vector3(), dir = new THREE.Vector3(), side = new THREE.Vector3(), X = new THREE.Vector3(), Z = new THREE.Vector3();
+  let n = 0; tries = 0;
+  while (n < litterTarget && tries++ < litterTarget * 12) {
+    const a = r() * 6.283, d = Math.pow(r(), 0.8) * 24;
+    const x = Math.cos(a) * d, z = 3 + Math.sin(a) * d;
     const y = heightAt(x, z);
     if (y < 0.03) continue;
-    // Keep the near foreground for moss, rocks and ferns like the reference.
-    const nearCam = Math.hypot(x + 0.3, z - 5.2);
-    if (nearCam < 3.2 && !(x > 0.4 && z < 3.4)) { if (r() < 0.9) continue; }
-    if (pe < 1.45 && z > -1.5 && x < 0.9) continue;
-    const fore = Math.hypot(x + 0.3, z - 4.5) < 4.2 && !(x > 0.9 && z < 3.6);
-    if (fore && (pm > 0.12 || r() < 0.35)) continue;
-    const tall = pe < 1.25 ? 1.4 : 1.0; // lush reeds at the water's edge
-    let h = (0.08 + r() * 0.22) * tall * (0.7 + clump * 0.4);
-    if (fore) h *= 0.45;
-    e.set((r() - 0.5) * 0.5, r() * Math.PI * 2, (r() - 0.5) * 0.5);
-    q.setFromEuler(e);
-    s.set(0.8 + r() * 0.6, h, 1);
-    p.set(x, y - 0.02, z);
-    m.compose(p, q, s);
-    mesh.setMatrixAt(n, m);
-    const g = (0.75 + r() * 0.4) * (pe > 1.45 && z < -2 ? 0.6 : 1);
-    c.setRGB(0.26 * g + r() * 0.06, 0.5 * g, 0.08 * g);
-    mesh.setColorAt(n, c);
+    const drift = 0.4 + 1.5 * fbm(x * 0.22 + 9, z * 0.22, 3, 13) + 0.3 * pathMask(x, z);
+    if (r() > drift) continue;
+    if (nearRock(x, z, -0.25)) continue;
+    const gx = (heightAt(x + 0.08, z) - y) / 0.08, gz = (heightAt(x, z + 0.08) - y) / 0.08;
+    nrm.set(-gx + (r() - 0.5) * 0.5, 1, -gz + (r() - 0.5) * 0.5).normalize();
+    if (r() < 0.25) nrm.multiplyScalar(-1);                       // some lie face-down, pale side up
+    const ra = r() * 6.283;
+    dir.set(Math.cos(ra), 0, Math.sin(ra));
+    dir.addScaledVector(nrm, -dir.dot(nrm)).normalize();
+    side.crossVectors(dir, nrm);
+    const sc = 0.062 + r() * 0.04;
+    p.set(x, y + 0.006 + r() * 0.012, z);
+    m4.makeBasis(X.copy(side).multiplyScalar(sc), dir.multiplyScalar(sc), Z.copy(nrm).multiplyScalar(sc * (0.5 + r() * 2.2))).setPosition(p);
+    const t = r(), v = 0.55 + r() * 0.6;
+    // tint multiplies the green leaf texture: push it to copper, tan and yellow
+    const c = t < 0.45 ? [0.27, 0.105, 0.04] : t < 0.75 ? [0.2, 0.1, 0.05] : t < 0.92 ? [0.4, 0.25, 0.09] : t < 0.97 ? [0.5, 0.38, 0.08] : [0.2, 0.3, 0.07];
+    litter.add(m4, c[0] * v, c[1] * v, c[2] * v, 0, 0, Math.floor(r() * 4));
     n++;
   }
-  mesh.count = n;
-  mesh.receiveShadow = true;
-  mesh.castShadow = false;
-  mesh.frustumCulled = false;
-  return mesh;
-}
+  const lm = litter.build(leafGeometry(), litterMaterials(), { castShadow: false });
+  lm.frustumCulled = false;
+  noReflect.push(lm);
+  group.add(lm);
 
-// Hand-placed fern beds (matching the reference), plus scattered ones around the banks.
-const FERN_SPOTS = [
-  // around the left tree base, sunlit
-  [-1.25, 1.0, 1.0], [-2.25, 1.35, 0.9], [-1.9, 0.6, 0.8], [-2.8, 0.9, 1.1], [-3.5, 1.6, 1.0], [-2.4, 2.4, 0.8],
-  // right bank by the roots
-  [1.95, 3.3, 1.0], [2.4, 2.4, 1.1], [2.1, 4.1, 0.9], [2.9, 3.2, 1.0], [0.85, 3.6, 0.6],
-  // far bank, a line of bright ferns in the sun
-  [1.5, -6.8, 1.3], [2.5, -6.4, 1.2], [3.6, -5.9, 1.3], [4.6, -5.1, 1.2], [0.4, -7.1, 1.1], [-1.0, -7.2, 1.2], [-2.4, -7.0, 1.1], [5.6, -4.0, 1.2],
-  // near-left foreground
-  [-1.8, 4.3, 0.7], [-2.6, 5.2, 0.9],
-  // low ferns along the near water edge where sedge used to be
-  [-1.05, 2.75, 0.55], [-2.2, 2.6, 0.7], [0.55, 2.85, 0.5], [-3.6, 2.3, 0.8],
-  // bright clump hugging the left trunk base
-  [-1.3, 1.1, 0.75, 1],
-  [-2.6, 3.0, 0.7], [-2.1, 3.4, 0.55], [-3.0, 3.6, 0.65],
-  // right bank cover
-  [1.0, 3.3, 0.5], [1.5, 3.9, 0.55], [2.2, 4.4, 0.6], [0.9, 4.3, 0.45], [1.8, 3.1, 0.5], [2.5, 3.0, 0.6],
-  // near-right foreground
-  [1.45, 5.0, 0.8], [2.2, 5.6, 0.9],
-];
-
-export function createFerns(quality) {
-  const group = new THREE.Group();
-  const loader = new GLTFLoader(manager);
-  const alpha = tex(A('fern/textures/fern_02_alpha_1k.jpg'), { srgb: false, repeat: false, flipY: false });
-  loader.load(A('fern/fern_02.json'), (gltf) => {
-    gltf.scene.updateMatrixWorld(true);
-    const variants = [];
-    gltf.scene.traverse((o) => {
-      if (!o.isMesh) return;
-      const g = o.geometry.clone();
-      g.applyMatrix4(o.matrixWorld);
-      g.computeBoundingBox();
-      const b = g.boundingBox;
-      g.translate(-(b.min.x + b.max.x) / 2, -b.min.y, -(b.min.z + b.max.z) / 2);
-      g.computeBoundingBox();
-      variants.push({ geo: g, height: g.boundingBox.max.y, mat: o.material });
-    });
-    const r = rng(555);
-    const spots = [];
-    for (const [x, z, s, force] of FERN_SPOTS) {
-      if (!force && poolE(x, z) < 1.15) continue;
-      spots.push([x, z, s]);
-      // small companions around each bed
-      for (let k = 0; k < 2; k++) { const cx = x + (r() - 0.5) * 1.4, cz = z + (r() - 0.5) * 1.4; if (poolE(cx, cz) > 1.15) spots.push([cx, cz, s * (0.5 + r() * 0.4)]); }
-    }
-    const extra = quality === 'low' ? 60 : 130;
-    let tries = 0;
-    while (spots.length < FERN_SPOTS.length * 3 + extra && tries++ < 5000) {
-      const ang = r() * Math.PI * 2, rad = 4 + r() * 18;
-      const x = -0.4 + Math.cos(ang) * rad, z = -2.2 + Math.sin(ang) * rad;
-      const pe = poolE(x, z);
-      if (pe < 1.15 || pathMask(x, z) > 0.1) continue;
-      if (Math.hypot(x + 0.3, z - 6.5) < 1.5) continue;
-      spots.push([x, z, 0.7 + r() * 0.7]);
-    }
-    const per = variants.map(() => []);
-    spots.forEach((sp, i) => per[i % variants.length].push(sp));
-    variants.forEach((v, vi) => {
-      const mat = v.mat.clone();
-      mat.alphaMap = alpha;
-      mat.alphaTest = 0.5;
-      mat.transparent = false;
-      mat.side = THREE.DoubleSide;
-      mat.color = new THREE.Color(1.25, 1.4, 0.75);
-      mat.emissive = new THREE.Color(0.35, 0.55, 0.08);
-      mat.emissiveMap = mat.map;
-      mat.emissiveIntensity = 0.35;
-      wind(mat, { amount: 0.05, useUvY: false, freq: 1.2 });
-      const inst = new THREE.InstancedMesh(v.geo, mat, per[vi].length);
-      const m = new THREE.Matrix4(), q = new THREE.Quaternion();
-      per[vi].forEach(([x, z, s], i) => {
-        const y = heightAt(x, z) - 0.03;
-        const nearPool = poolE(x, z) < 1.45 && z > -2 ? 0.7 : 1;
-        const sc = (s * 0.9 * nearPool) / Math.max(0.4, v.height);
-        q.setFromEuler(new THREE.Euler((r() - 0.5) * 0.2, r() * Math.PI * 2, (r() - 0.5) * 0.2));
-        m.compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(sc, sc * (0.85 + r() * 0.3), sc));
-        inst.setMatrixAt(i, m);
-      });
-      inst.castShadow = true;
-      inst.receiveShadow = true;
-      group.add(inst);
-    });
-  });
+  group.userData.contacts = contacts;
+  group.userData.noReflect = noReflect;
   return group;
 }
