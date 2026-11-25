@@ -98,7 +98,7 @@ const CompositeShader = {
       // thin-lens-like: sharp around the focus distance, soft far background and very near foreground
       float c = abs(1.0 / uFocus - 1.0 / max(z, 0.1)) * uFocus;
       if (z < uFocus) c *= 0.3;                      // keep the foreground readable; only very close things soften
-      return clamp(c * 0.42 - 0.2, 0.0, 0.7) * uAperture;
+      return clamp(c * 0.5 - 0.2, 0.0, 0.8) * uAperture;
     }
     void main() {
       vec3 col = texture2D(tColor, vUv).rgb;
@@ -194,7 +194,7 @@ class ScenePass extends Pass {
     this.gtao.setGBuffer(this.depthTexture, undefined);
     this.gtao.normalRenderTarget.dispose();
     this.gtao.normalRenderTarget = { setSize() {}, dispose() {} };
-    this.gtao.updateGtaoMaterial({ radius: 0.55, distanceExponent: 1.4, thickness: 1.2, scale: 1.15, samples: quality === 'low' ? 8 : 16, distanceFallOff: 1, screenSpaceRadius: false });
+    this.gtao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.2, thickness: 1.3, scale: 1.5, samples: quality === 'low' ? 8 : 16, distanceFallOff: 1, screenSpaceRadius: false });
     this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, radiusExponent: 1.5, rings: 2, samples: quality === 'low' ? 8 : 16 });
     this.gtao.blendIntensity = 1.0;
     this.volMat = new THREE.ShaderMaterial(VolumetricShader);
@@ -268,7 +268,7 @@ export function createPipeline({ renderer, scene, camera, water, sun, quality, s
   const scenePass = new ScenePass(renderer, scene, camera, water, sun, quality);
   scenePass.still = still;
   composer.addPass(scenePass);
-  const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.18, 0.4, 0.95);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.22, 0.4, 0.95);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
   const fxaa = new ShaderPass(FXAAShader);

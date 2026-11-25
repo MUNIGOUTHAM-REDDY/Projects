@@ -149,3 +149,24 @@ export function buildSplat(extraContacts = []) {
   SPLAT.tex = t;
   return t;
 }
+
+// Top-down crown cover, splatted from the trees that were actually grown. Shaders use it to cut sky light under crowns.
+export function buildCanopy(crowns) {
+  const res = 256, min = -100, size = 200, cell = size / res;
+  const acc = new Float32Array(res * res);
+  for (const c of crowns) {
+    const i0 = Math.max(0, Math.floor((c.x - c.r - min) / cell)), i1 = Math.min(res - 1, Math.ceil((c.x + c.r - min) / cell));
+    const j0 = Math.max(0, Math.floor((c.z - c.r - min) / cell)), j1 = Math.min(res - 1, Math.ceil((c.z + c.r - min) / cell));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const d = Math.hypot(min + (i + 0.5) * cell - c.x, min + (j + 0.5) * cell - c.z) / c.r;
+      acc[j * res + i] += 0.75 * smoothstep(1.0, 0.35, d);
+    }
+  }
+  const data = new Uint8Array(res * res * 4);
+  for (let k = 0; k < res * res; k++) { const v = Math.min(1, acc[k]) * 255; data[k * 4] = data[k * 4 + 1] = data[k * 4 + 2] = v; data[k * 4 + 3] = 255; }
+  const t = new THREE.DataTexture(data, res, res, THREE.RGBAFormat);
+  t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true;
+  G.tCanopy.value = t;
+  G.uCanopy.value.set(min, min, 1 / size);
+  return t;
+}

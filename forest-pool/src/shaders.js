@@ -11,6 +11,8 @@ export const G = {
   uAbsorb: { value: new THREE.Vector3(0.55, 0.075, 0.115) },
   uShadowCentre: { value: new THREE.Vector3(0, 0, 0) },
   uShadowRadius: { value: 30 },
+  tCanopy: { value: null },        // top-down crown cover, 0..1
+  uCanopy: { value: new THREE.Vector3(-100, -100, 1 / 200) },
   tBake: { value: null },          // rgba: bed height, flow x, flow z, foam
   uBake: { value: new THREE.Vector4(0, 0, 1, 1) }, // min x, min z, 1/size
 };
@@ -148,10 +150,10 @@ export function underwater(mat, { caustics = true, wet = true } = {}) {
 export function dapple(mat, { strength = 1 } = {}) {
   worldPos(mat);
   return chain(mat, 'dapple' + strength, (s) => {
-    Object.assign(s.uniforms, { uSunDirD: G.uSunDir, uShadowCentre: G.uShadowCentre, uShadowRadius: G.uShadowRadius });
+    Object.assign(s.uniforms, { uSunDirD: G.uSunDir, uShadowCentre: G.uShadowCentre, uShadowRadius: G.uShadowRadius, tCanopy: G.tCanopy, uCanopy: G.uCanopy });
     s.fragmentShader = s.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform vec3 uSunDirD; uniform vec3 uShadowCentre; uniform float uShadowRadius;
+        uniform vec3 uSunDirD; uniform vec3 uShadowCentre; uniform float uShadowRadius; uniform sampler2D tCanopy; uniform vec3 uCanopy;
         ${GOBO_GLSL}`)
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
         {
@@ -159,6 +161,10 @@ export function dapple(mat, { strength = 1 } = {}) {
           float gob = mix(1.0, canopyGobo(vUW, uSunDirD, far), ${strength.toFixed(2)});
           reflectedLight.directDiffuse *= gob;
           reflectedLight.directSpecular *= gob;
+          // sky light is blocked by the crowns overhead: deep shade in the understory, open sky over the river
+          float occ = texture2D(tCanopy, (vUW.xz - uCanopy.xy) * uCanopy.z).r * smoothstep(17.0, 5.0, vUW.y);
+          reflectedLight.indirectDiffuse *= 1.0 - 0.46 * occ;
+          reflectedLight.indirectSpecular *= 1.0 - 0.4 * occ;
         }`);
   });
 }

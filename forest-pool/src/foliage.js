@@ -101,7 +101,7 @@ function foliageShading(mat, { card, dry = false }) {
           // the sun is on the far side of the blade: light it from behind, tinted by the leaf
           fBack = smoothstep(0.05, -0.2, nl);
           vec3 base = diffuseColor.rgb;
-          vec3 under = mix(base, vec3(dot(base, vec3(0.3, 0.6, 0.1))) * vec3(0.9, 1.0, 0.72), 0.3) * 0.95;
+          vec3 under = mix(base, vec3(dot(base, vec3(0.3, 0.6, 0.1))) * vec3(0.9, 1.0, 0.72), 0.3) * 0.78;
           if (!gl_FrontFacing) diffuseColor.rgb = under;
           vec3 trans = min(base * vec3(1.05, 1.45, 0.4), vec3(0.3, 0.6, 0.13));   // transmission is the leaf's own colour, never white
           ${dry ? 'trans = base * vec3(1.15, 0.9, 0.5); if (!gl_FrontFacing) diffuseColor.rgb = base * 1.1;' : ''}
@@ -130,7 +130,7 @@ export function leafMaterials() {
   const nrm = tex(A('leaf_atlas_n.jpg'), { srgb: false, repeat: false });
   const mat = new THREE.MeshStandardMaterial({
     map, normalMap: nrm, normalScale: new THREE.Vector2(0.8, 0.8), alphaTest: 0.5, side: THREE.DoubleSide,
-    roughness: 0.62, metalness: 0, envMapIntensity: 0.55,
+    roughness: 0.54, metalness: 0, envMapIntensity: 0.55,
   });
   atlasPatch(mat, 4, 1, 'm');
   foliageShading(mat, { card: false });

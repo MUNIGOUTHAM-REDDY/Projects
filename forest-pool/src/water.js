@@ -104,7 +104,8 @@ const WaterShader = {
       vec3 n = normalize(vec3(nxy.x, 1.0, nxy.y));
 
       float cosT = clamp(dot(V, n), 0.0, 1.0);
-      float F = 0.02 + 0.98 * pow(1.0 - cosT, 5.0);
+      // forest water under a dark canopy mirrors more than bare Fresnel suggests: trunks and banks cut across the turquoise
+      float F = clamp(0.07 + 0.93 * pow(1.0 - cosT, 3.6), 0.0, 1.0);
 
       // refraction of the bed, bent more where the water is deeper
       vec2 suv = gl_FragCoord.xy / uRes;

@@ -224,7 +224,7 @@ function sprayBranch(limb, cards, r, tint, { spacing = 0.42, size = 0.8, from = 
     nrm.copy(UP).addScaledVector(side, (r() - 0.5) * 1.1).addScaledVector(T, (r() - 0.5) * 0.6).normalize();
     const sc = size * (0.8 + r() * 0.45);
     basis(P, dir, nrm, sc, sc, sc, _m);
-    const v = (0.74 + r() * 0.4) * shade * (0.62 + 0.45 * t), hue = r();
+    const v = (0.74 + r() * 0.4) * shade * (0.46 + 0.62 * t), hue = r();
     cards.add(_m, tint[0] * v * (0.92 + hue * 0.22), tint[1] * v, tint[2] * v * (0.8 + hue * 0.3), limb.swayAt(t), r(), Math.floor(r() * variants));
   }
 }
@@ -332,7 +332,7 @@ function growHero(mains, r, out, tint, { branchCount = 14, twigDensity = 1 } = {
       t2.tp = 1; l2.push(t2);
       for (const b2 of l2) {
         // leaves deep inside the crown sit in the shade of the shell
-        const shade = outer1 * (0.6 + 0.45 * b2.tp);
+        const shade = outer1 * (0.48 + 0.58 * b2.tp);
         out.twigs.push(tube(b2, { radial: 4, barkTile: 0.5 }));
         const l3 = sprout(b2, { count: Math.max(1, b2.path.L * 8.5 * twigDensity), t0: 0.15, t1: 0.92, angle: [30, 62], len: (t, p) => Math.min(0.5, 0.16 + p.path.L * 0.45), rRatio: 0.6, rTip: 0.002, droop: 0.35, planar: true, wiggle: 0.18, segs: 3, flex: 0.03 }, r);
         for (const tw of l3) { out.twigs.push(tube(tw, { radial: 3, barkTile: 0.5 })); leafTwig(tw, out.leaves, r, tint, { shade: shade * (0.85 + 0.2 * tw.tp) }); }
@@ -379,7 +379,7 @@ function heroLeft(out, r) {
   ];
   mains.forEach((m, i) => out.geos.push(tube(m, { radial: i < 2 ? 18 : 10, collar: i < 2 ? 0.35 : 0.55, lumps: 0.05, seed: i * 2.1, knots: i < 2 ? addKnots(r, 4, 4, m.r0) : null, barkTile: i < 2 ? 1.5 : 0.75 })));
   const top = new Limb(new Path(trunkPath.p.filter((_, i) => trunkPath.cum[i] > 5.5)), 0.17, 0.04, 0.03, 0.5, 1);
-  growHero([...mains, top], r, out, [1.0, 1.0, 1.0], { twigDensity: out.twigDensity });
+  growHero([...mains, top], r, out, [0.9, 0.96, 0.8], { twigDensity: out.twigDensity });
 }
 
 function heroRight(out, r) {
@@ -412,7 +412,7 @@ function heroRight(out, r) {
     mains.push(leader(pts, lerp(0.12, 0.05, t), 0.012, 0.3 + t * 0.4));
   }
   mains.forEach((m, i) => out.geos.push(tube(m, { radial: 10, collar: 0.6, lumps: 0.04, seed: i, barkTile: 0.75 })));
-  growHero(mains, r, out, [0.95, 1.0, 0.95], { branchCount: 12, twigDensity: out.twigDensity });
+  growHero(mains, r, out, [0.7, 0.86, 0.78], { branchCount: 12, twigDensity: out.twigDensity });
 }
 
 // --- Forest ---------------------------------------------------------------------------
@@ -490,7 +490,11 @@ function forestTree(x, z, r, out, kind, force = null) {
     for (const b of stubs) out.geos.push(tube(b, { radial: 5, collar: 0.5, barkTile: 0.7, tintV }));
     return;
   }
-  const tint = [0.86 + r() * 0.3, 0.94 + r() * 0.14, 0.72 + r() * 0.4];
+  // species and site: most crowns mid-green, some deep blue-green, some olive, some yellow-green, a few much darker (alder)
+  const ph = Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1, pv = 0.86 + 0.22 * (Math.abs(Math.sin(x * 39.3 + z * 11.1) * 9631.7) % 1);
+  const pal = ph < 0.16 ? [0.5, 0.7, 0.56] : ph < 0.36 ? [0.66, 0.86, 0.78] : ph < 0.54 ? [0.98, 0.92, 0.5] : ph < 0.7 ? [1.06, 1.02, 0.56] : [0.86, 0.96, 0.74];
+  const tint = [(0.86 + r() * 0.3) * pal[0] * pv, (0.94 + r() * 0.14) * pal[1] * pv, (0.72 + r() * 0.4) * pal[2] * pv];
+  { const c = path.at(0.78); out.crowns.push({ x: c.x, z: c.z, r: Math.max(3, (type === 'young' ? 4.4 * 0.9 : type === 'old' ? 8.5 * H / 26 : 7.0 * H / 26) * 0.95) }); }
   const crown0 = type === 'young' ? 0.25 + r() * 0.2 : type === 'old' ? 0.3 + r() * 0.12 : 0.34 + r() * 0.26;
   const lenBase = (type === 'young' ? 4.4 : type === 'old' ? 8.5 : 7.0) * (H / 26) * (type === 'young' ? 26 / H * 0.9 : 1);
   const nL = far ? 10 : type === 'young' ? 13 + Math.floor(r() * 4) : 13 + Math.floor(r() * 5);
@@ -570,7 +574,7 @@ export function createTrees(quality) {
   heroLeft(heroL, r);
   heroRight(heroR, r);
 
-  const forest = { geos: [], small: [], sprays: new Instances(), boughs: new Instances(), leaves: new Instances(), contacts: [], roots: [], realNear: hi };
+  const forest = { geos: [], small: [], sprays: new Instances(), boughs: new Instances(), leaves: new Instances(), contacts: [], roots: [], crowns: [], realNear: hi };
   const placed = [{ x: HERO_TREES.left.x, z: HERO_TREES.left.z }, { x: HERO_TREES.right.x, z: HERO_TREES.right.z }];
   const tooClose = (x, z, d) => placed.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < d * d);
   const okGround = (x, z, margin) => {
@@ -690,6 +694,7 @@ export function createTrees(quality) {
   sprays.frustumCulled = false; boughs.frustumCulled = false;
   group.add(sprays, boughs);
 
+  group.userData.crowns = [...forest.crowns, { x: HERO_TREES.left.x - 0.5, z: HERO_TREES.left.z - 1.2, r: 7.5 }, { x: HERO_TREES.right.x - 0.5, z: HERO_TREES.right.z - 0.4, r: 6.5 }];
   group.userData.contacts = forest.contacts;
   group.userData.noReflect = noReflect;
   group.userData.thinned = thinned;

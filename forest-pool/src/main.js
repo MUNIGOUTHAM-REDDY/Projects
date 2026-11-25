@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { G } from './shaders.js';
 import { manager, setAnisotropy } from './textures.js';
 import { heightAt, WATER_Y } from './world.js';
-import { buildBake, buildSplat } from './bake.js';
+import { buildBake, buildSplat, buildCanopy } from './bake.js';
 import { createTerrain } from './terrain.js';
 import { createWater, excludeFromReflection } from './water.js';
 import { createTrees } from './trees.js';
@@ -40,7 +40,7 @@ const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 50
 
 // --- Light ----------------------------------------------------------------
 const SUN_COLOR = new THREE.Color(1.0, 0.89, 0.72);
-const sun = new THREE.DirectionalLight(SUN_COLOR, Number(params.get('sun') || 9.5));
+const sun = new THREE.DirectionalLight(SUN_COLOR, Number(params.get('sun') || 11));
 const sunTarget = new THREE.Object3D();
 sunTarget.position.set(-0.5, 0, -1.5);
 G.uShadowCentre.value.copy(sunTarget.position);
@@ -55,12 +55,13 @@ const sc = sun.shadow.camera;
 sc.left = -SHADOW_HALF; sc.right = SHADOW_HALF; sc.top = SHADOW_HALF; sc.bottom = -SHADOW_HALF; sc.near = 20; sc.far = 150;
 sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.03;
-sun.shadow.radius = 2.5;
+sun.shadow.radius = 1.3;
 scene.add(sun);
 
 // --- World ----------------------------------------------------------------
 buildBake();
 const trees = createTrees(quality);
+buildCanopy(trees.userData.crowns);
 const rocks = createRocks(quality);
 const cover = createGroundCover(quality);
 const splat = buildSplat([...(trees.userData.contacts || []), ...(cover.userData.contacts || [])]);
@@ -75,7 +76,7 @@ const sky = createSky();
   envScene.add(createSky({ forEnv: true }));
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(envScene, 0.02).texture;
-  scene.environmentIntensity = Number(params.get('env') || 1.5);
+  scene.environmentIntensity = Number(params.get('env') || 1.6);
   pmrem.dispose();
 }
 scene.add(sky, terrain, water, trees, rocks, cover, falling, motes);
