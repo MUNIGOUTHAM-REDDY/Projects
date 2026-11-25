@@ -18,4 +18,9 @@ rmSync('dist', { recursive: true, force: true });
 mkdirSync('dist', { recursive: true });
 writeFileSync('dist/index.html', html);
 cpSync('assets', 'dist/assets', { recursive: true });
+// Artifacts only serve web file types, so inline the fern's binary buffer into a .json glTF.
+const gltf = JSON.parse(readFileSync('assets/fern/fern_02.gltf', 'utf8'));
+for (const b of gltf.buffers) b.uri = 'data:application/octet-stream;base64,' + readFileSync('assets/fern/' + b.uri).toString('base64');
+writeFileSync('dist/assets/fern/fern_02.json', JSON.stringify(gltf));
+rmSync('dist/assets/fern/fern_02.gltf'); rmSync('dist/assets/fern/fern_02.bin');
 console.log(`dist/index.html ${(html.length / 1024).toFixed(1)} KB`);

@@ -59,7 +59,7 @@ export function createGrass(quality) {
     const clump = 0.5 + fbm(x * 0.6, z * 0.6, 3, 21) * 1.6 + (pe < 1.35 ? 0.35 : 0);
     if (r() > clump) continue;
     if (Math.hypot(x - HERO_TREES.left.x, z - HERO_TREES.left.z) < 0.5) continue;
-    if (Math.hypot(x - HERO_TREES.right.x, z - HERO_TREES.right.z) < 0.4) continue;
+    if (Math.hypot(x - HERO_TREES.right.x, z - HERO_TREES.right.z) < 0.75) continue;
     const y = heightAt(x, z);
     if (y < 0.03) continue;
     // Keep the near foreground for moss, rocks and ferns like the reference.
@@ -103,6 +103,7 @@ const FERN_SPOTS = [
   [-1.05, 2.75, 0.55], [-2.2, 2.6, 0.7], [0.55, 2.85, 0.5], [-3.6, 2.3, 0.8],
   // bright clump hugging the left trunk base
   [-1.3, 1.1, 0.75, 1],
+  [-2.6, 3.0, 0.7], [-2.1, 3.4, 0.55], [-3.0, 3.6, 0.65],
   // right bank cover
   [1.0, 3.3, 0.5], [1.5, 3.9, 0.55], [2.2, 4.4, 0.6], [0.9, 4.3, 0.45], [1.8, 3.1, 0.5], [2.5, 3.0, 0.6],
   // near-right foreground
@@ -113,7 +114,7 @@ export function createFerns(quality) {
   const group = new THREE.Group();
   const loader = new GLTFLoader(manager);
   const alpha = tex(A('fern/textures/fern_02_alpha_1k.jpg'), { srgb: false, repeat: false, flipY: false });
-  loader.load(A('fern/fern_02.gltf'), (gltf) => {
+  loader.load(A('fern/fern_02.json'), (gltf) => {
     gltf.scene.updateMatrixWorld(true);
     const variants = [];
     gltf.scene.traverse((o) => {

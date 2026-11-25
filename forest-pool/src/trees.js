@@ -115,6 +115,7 @@ function barkMaterial(name, { moss = 0.5, tint = [1, 1, 1], mossBase = 1.6, desa
           return mix(mix(bh(i),bh(i+vec2(1,0)),f.x), mix(bh(i+vec2(0,1)),bh(i+vec2(1,1)),f.x), f.y); }`)
       .replace('#include <map_fragment>', `#include <map_fragment>
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11))), ${desat.toFixed(2)});
+        { float bl = dot(diffuseColor.rgb, vec3(0.33)); diffuseColor.rgb *= mix(1.0, 0.62, smoothstep(0.45, 0.75, bl)); }
         {
           float up = clamp(vBN.y, 0.0, 1.0);
           float streak = bn(vec2(atan(vBN.z, vBN.x) * 3.0, vBW.y * 0.6) + vBW.xz);
@@ -166,26 +167,26 @@ function heroLeft(out, r) {
   const { x, z } = HERO_TREES.left;
   const y0 = heightAt(x, z);
   const trunk = limbGeometry(
-    [V(x + 0.12, y0 - 0.5, z), V(x + 0.06, y0 + 0.7, z), V(x + 0.1, y0 + 1.3, z - 0.04), V(x + 0.16, y0 + 1.95, z - 0.08)],
-    0.27, 0.1, { radial: 22, perMetre: 8, flare: 1.3, flareLobes: 5, seed: 1.3, rough: 0.05, barkTile: 1.6 });
+    [V(x + 0.12, y0 - 0.5, z), V(x + 0.06, y0 + 0.7, z), V(x + 0.1, y0 + 1.3, z - 0.04), V(x + 0.16, y0 + 1.78, z - 0.08)],
+    0.27, 0.13, { radial: 22, perMetre: 8, flare: 1.3, flareLobes: 5, seed: 1.3, rough: 0.05, barkTile: 1.6 });
   out.geos.push(trunk.geo);
   const F = V(x + 0.16, y0 + 1.6, z - 0.08);
   const limbs = [
     // main limb leaning up-left, leaving the frame top-left
     { pts: [V(x + 0.1, y0 + 1.45, z - 0.08), V(x - 0.15, y0 + 2.5, z + 0.05), V(x - 0.35, y0 + 3.3, z + 0.2), V(x - 0.95, y0 + 4.3, z + 0.05), V(x - 1.15, y0 + 5.6, z + 0.15), V(x - 1.8, y0 + 8.5, z - 0.3)], r0: 0.15, r1: 0.03 },
     // main limb arching up-right across the top of the view
-    { pts: [V(x + 0.22, y0 + 1.45, z - 0.08), V(x + 0.5, y0 + 2.35, z + 0.05), V(x + 0.6, y0 + 3.1, z + 0.25), V(x + 1.25, y0 + 3.7, z + 0.4), V(x + 1.35, y0 + 4.6, z + 0.7), V(x + 2.0, y0 + 5.4, z + 0.6), V(x + 2.4, y0 + 6.9, z + 0.6)], r0: 0.15, r1: 0.03 },
+    { pts: [V(x + 0.22, y0 + 1.45, z - 0.08), V(x + 0.5, y0 + 2.4, z + 0.05), V(x + 1.0, y0 + 3.2, z + 0.25), V(x + 1.6, y0 + 4.0, z + 0.45), V(x + 2.0, y0 + 4.9, z + 0.6), V(x + 2.6, y0 + 6.6, z + 0.6)], r0: 0.15, r1: 0.03 },
     // thin reaching branch to the right
-    { pts: [V(x + 0.45, y0 + 2.2, z), V(x + 1.1, y0 + 2.7, z + 0.15), V(x + 1.9, y0 + 3.0, z + 0.35), V(x + 2.8, y0 + 3.5, z + 0.6), V(x + 3.5, y0 + 4.3, z + 0.8)], r0: 0.07, r1: 0.008 },
+    { pts: [V(x + 0.45, y0 + 2.2, z), V(x + 1.1, y0 + 2.7, z + 0.15), V(x + 1.9, y0 + 2.8, z + 0.35), V(x + 2.8, y0 + 3.3, z + 0.6), V(x + 3.5, y0 + 4.3, z + 0.8)], r0: 0.07, r1: 0.008, sp: { from: 0.7, leafDensity: 1.0 } },
     // thin branch to the left
     { pts: [V(x - 0.2, y0 + 2.6, z + 0.03), V(x - 0.8, y0 + 3.0, z + 0.3), V(x - 1.5, y0 + 3.2, z + 0.6), V(x - 2.2, y0 + 3.3, z + 0.9)], r0: 0.06, r1: 0.02 },
     // thin one back over the water
-    { pts: [V(x + 0.7, y0 + 3.0, z + 0.1), V(x + 0.9, y0 + 4.2, z - 0.8), V(x + 1.1, y0 + 6.0, z - 1.8)], r0: 0.07, r1: 0.025 },
+    { pts: [V(x + 0.7, y0 + 3.0, z + 0.1), V(x + 0.9, y0 + 4.2, z - 0.8), V(x + 1.1, y0 + 6.0, z - 1.8)], r0: 0.07, r1: 0.025, sp: { from: 0.7, leafDensity: 1.0 } },
   ];
   for (const l of limbs) {
     const { geo, curve } = limbGeometry(l.pts, l.r0, l.r1, { radial: 14, perMetre: 6, rough: 0.03 });
     out.geos.push(geo);
-    sprout(curve, l.r0, 1, r, out, { count: 7, lenScale: 0.4, from: 0.25, leafSize: 1.1, leafDensity: 2.2 });
+    sprout(curve, l.r0, 1, r, out, { count: 7, lenScale: 0.4, from: 0.25, leafSize: 1.1, leafDensity: 2.2, ...(l.sp || {}) });
   }
 }
 
@@ -193,18 +194,18 @@ function heroRight(out, r) {
   const { x, z } = HERO_TREES.right;
   const y0 = heightAt(x, z);
   const pts = [V(x, y0 - 0.6, z), V(x - 0.02, y0 + 1.4, z - 0.02), V(x - 0.1, y0 + 3.4, z - 0.08), V(x - 0.28, y0 + 6.0, z - 0.2), V(x - 0.35, y0 + 10, z - 0.3), V(x - 0.25, y0 + 16, z - 0.4)];
-  const trunk = limbGeometry(pts, 0.22, 0.1, { radial: 20, perMetre: 6, flare: 1.4, flareLobes: 4, seed: 4.1, rough: 0.05 });
+  const trunk = limbGeometry(pts, 0.22, 0.1, { radial: 20, perMetre: 6, flare: 2.0, flareLobes: 4, seed: 4.1, rough: 0.05 });
   out.geos.push(trunk.geo);
   // Roots reaching into the water.
   const roots = [
-    [V(x - 0.1, y0 + 0.15, z), V(x - 0.5, y0 - 0.05, z - 0.25), V(x - 0.85, -0.35, z - 0.55), V(x - 1.05, -0.6, z - 0.7)],
-    [V(x, y0 + 0.1, z - 0.1), V(x - 0.15, y0 - 0.1, z - 0.6), V(x - 0.25, -0.4, z - 1.05)],
-    [V(x + 0.1, y0 + 0.1, z), V(x + 0.55, y0 - 0.05, z - 0.25), V(x + 0.95, y0 - 0.2, z - 0.4)],
-    [V(x - 0.1, y0 + 0.1, z + 0.05), V(x - 0.6, y0 - 0.05, z + 0.3), V(x - 1.0, y0 - 0.2, z + 0.4)],
+    [V(x - 0.05, y0 + 0.25, z), V(x - 0.45, y0 + 0.02, z - 0.25), V(x - 0.75, -0.25, z - 0.5), V(x - 0.95, -0.6, z - 0.65)],
+    [V(x, y0 + 0.2, z - 0.05), V(x - 0.15, y0 - 0.05, z - 0.5), V(x - 0.25, -0.45, z - 0.9)],
+    [V(x + 0.08, y0 + 0.2, z), V(x + 0.45, y0 - 0.05, z - 0.2), V(x + 0.75, y0 - 0.35, z - 0.35)],
+    [V(x - 0.08, y0 + 0.2, z + 0.05), V(x - 0.45, y0 - 0.05, z + 0.25), V(x - 0.75, y0 - 0.35, z + 0.35)],
   ];
-  for (const rp of roots) out.geos.push(limbGeometry(rp, 0.11, 0.03, { radial: 8, perMetre: 6 }).geo);
+  for (const rp of roots) out.geos.push(limbGeometry(rp, 0.09, 0.02, { radial: 8, perMetre: 6 }).geo);
   const branches = [
-    { pts: [V(x + 0.03, y0 + 1.9, z), V(x - 0.25, y0 + 2.4, z - 0.05), V(x - 0.6, y0 + 3.2, z - 0.1), V(x - 0.85, y0 + 3.7, z - 0.25), V(x - 1.15, y0 + 4.1, z - 0.4), V(x - 1.4, y0 + 4.9, z - 0.5)], r0: 0.05, r1: 0.015 },
+    { pts: [V(x + 0.02, y0 + 1.85, z), V(x - 0.5, y0 + 2.45, z + 0.05), V(x - 1.0, y0 + 3.05, z), V(x - 1.5, y0 + 3.4, z - 0.1), V(x - 2.0, y0 + 3.65, z - 0.2)], r0: 0.045, r1: 0.01, sp: { from: 0.7, leafDensity: 0.8, count: 3 } },
     { pts: [V(x - 0.1, y0 + 3.3, z - 0.08), V(x + 0.55, y0 + 4.0, z + 0.1), V(x + 1.3, y0 + 4.5, z + 0.3), V(x + 2.2, y0 + 5.3, z + 0.3)], r0: 0.09, r1: 0.03 },
     { pts: [V(x - 0.3, y0 + 7.5, z - 0.2), V(x - 1.0, y0 + 8.6, z - 0.4), V(x - 1.9, y0 + 9.4, z - 0.4), V(x - 2.6, y0 + 10.6, z - 0.6)], r0: 0.08, r1: 0.03 },
     { pts: [V(x - 0.32, y0 + 9.5, z - 0.3), V(x + 0.6, y0 + 10.6, z - 0.1), V(x + 1.6, y0 + 11.6, z + 0.2)], r0: 0.07, r1: 0.025 },
@@ -213,7 +214,7 @@ function heroRight(out, r) {
   for (const l of branches) {
     const { geo, curve } = limbGeometry(l.pts, l.r0, l.r1, { radial: 10, perMetre: 5 });
     out.geos.push(geo);
-    sprout(curve, l.r0, 1, r, out, { count: 5, lenScale: 0.45, from: 0.3, leafSize: 1.1, leafDensity: 1.3 });
+    sprout(curve, l.r0, 1, r, out, { count: 5, lenScale: 0.45, from: 0.3, leafSize: 1.1, leafDensity: 1.3, ...(l.sp || {}) });
   }
 }
 

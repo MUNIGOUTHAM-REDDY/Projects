@@ -42,6 +42,8 @@ export function poolE(x, z) {
   let e = Math.sqrt(dx * dx + dz * dz) / wob;
   // The left tree stands on a small headland; water wraps behind and to its left.
   e += 0.5 * Math.exp(-((x + 1.85) ** 2 * 0.9 + (z - 1.8) ** 2 * 0.7));
+  e += 0.32 * smoothstep(-2.3, -4.2, x) * smoothstep(-1.8, 1.2, z);
+  e -= 0.07 * Math.exp(-((x + 0.1) ** 2 / 0.7 + (z - 2.7) ** 2 / 0.9));
   return e;
 }
 
@@ -85,6 +87,7 @@ export function heightAt(x, z) {
     const edge = smoothstep(1.0, 0.8, e);
     h = lerp(bank, basin, edge);
   }
+  if (e > 1.0) h += 0.3 * Math.exp(-((x + 2.2) ** 2 + (z - 2.7) ** 2) / 0.9) * smoothstep(1.0, 1.15, e);
   h -= 0.06 * pathMask(x, z);
   return h;
 }
