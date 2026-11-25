@@ -1,7 +1,7 @@
 // Baked maps the shaders and the scatter code share: riverbed height, the flow field (with
 // boulders deflecting it and trailing foam), and a splat map for the ground materials.
 import * as THREE from 'three';
-import { heightAt, river, bankE, cutBank, pathMask, fbm, smoothstep, clamp, ROCKS, HERO_TREES, WATER_Y } from './world.js';
+import { heightAt, river, bankE, cutBank, pathMask, fbm, smoothstep, clamp, ROCKS, HERO_TREES, WATER_Y, ledgeAt } from './world.js';
 import { G } from './shaders.js';
 
 export const BAKE = { minX: -83, minZ: -97, size: 150, res: 600, data: null };
@@ -23,9 +23,14 @@ export function buildBake() {
       const nn = clamp(r.d / r.w, -1.2, 1.2);
       let sp = clamp(0.3 / (r.D * 0.6 + depth * 0.4 + 0.12), 0.3, 1.6) * Math.max(0.12, 1 - 0.7 * nn * nn);
       sp *= smoothstep(-0.05, 0.25, depth) * 0.85 + 0.15;
+      // the stream accelerates over each cobble ledge and tumbles white just below it
+      const crest = ledgeAt(r.s, x, z), below = ledgeAt(r.s - 1.0, x, z), tail = ledgeAt(r.s - 2.6, x, z);
+      sp *= 1 + 0.9 * crest + 0.5 * below;
       data[k + 1] = r.tx * sp; data[k + 2] = r.tz * sp;
       // riffles: fast shallow water breaks into white streaks; a faint line of scum along the banks
       let foam = smoothstep(0.85, 1.5, sp) * smoothstep(0.42, 0.12, depth) * smoothstep(0.0, 0.06, depth) * (0.25 + 0.9 * Math.max(0, fbm(x * 0.9, z * 0.9, 2, 31) + 0.15));
+      const wet = smoothstep(0.0, 0.05, depth);
+      foam += wet * (1.0 * below * Math.max(0, fbm(x * 1.7, z * 1.7, 2, 41) + 0.3) * 1.7 + 0.4 * tail * Math.max(0, fbm(x * 0.8, z * 0.8, 2, 47) + 0.1) + 0.12 * crest);
       data[k + 3] = foam;
     }
   }
@@ -33,7 +38,7 @@ export function buildBake() {
   for (const rk of ROCKS) {
     const dep = WATER_Y - heightAt(rk.x, rk.z);
     if (dep < -0.12) continue;
-    const a = rk.r * 0.92, reach = a * 7;
+    const a = rk.r * 0.92, reach = a * 13, sub = rk.sub ? 0.5 : 1;
     const i0 = Math.max(0, Math.floor((rk.x - reach - minX) / cell)), i1 = Math.min(res - 1, Math.ceil((rk.x + reach - minX) / cell));
     const j0 = Math.max(0, Math.floor((rk.z - reach - minZ) / cell)), j1 = Math.min(res - 1, Math.ceil((rk.z + reach - minZ) / cell));
     const kc = (clamp(Math.floor((rk.z - minZ) / cell), 0, res - 1) * res + clamp(Math.floor((rk.x - minX) / cell), 0, res - 1)) * 4;
@@ -58,8 +63,8 @@ export function buildBake() {
       fx *= 1 - 0.8 * lee; fz *= 1 - 0.8 * lee;
       data[k + 1] = fx; data[k + 2] = fz;
       const collar = Math.exp(-(((d - a * 1.05) / (a * 0.22)) ** 2)) * (0.55 + 0.45 * Math.max(0, -along / d));
-      const wakeEdge = along > 0 ? Math.exp(-(((lat - a * (0.8 + along / (a * 9))) / (a * 0.3)) ** 2)) * Math.exp(-along / (a * 5)) : 0;
-      data[k + 3] = Math.min(1.5, data[k + 3] + us * (0.9 * collar + 0.75 * wakeEdge + 0.5 * lee * Math.exp(-along / (a * 2))));
+      const wakeEdge = along > 0 ? Math.exp(-(((lat - a * (0.8 + along / (a * 14))) / (a * 0.28)) ** 2)) * Math.exp(-along / (a * 9)) : 0;
+      data[k + 3] = Math.min(1.5, data[k + 3] + sub * Math.min(1.3, us * 1.2) * (0.9 * collar + 0.85 * wakeEdge + 0.6 * lee * Math.exp(-along / (a * 6))));
     }
   }
   BAKE.data = data;

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { G } from './shaders.js';
 import { rng } from './world.js';
 
-export const FOG_COLOR = new THREE.Color(0.2, 0.3, 0.19);
+export const FOG_COLOR = new THREE.Color(0.085, 0.15, 0.1);
 
 export function createMotes(count = 900) {
   const r = rng(5);
@@ -67,16 +67,16 @@ export function createSky({ forEnv = false } = {}) {
         c = mix(c, down, smoothstep(0.05, -0.35, y));
         c += vec3(0.9, 0.95, 1.0) * 0.5 * smoothstep(0.55, 1.0, y);
         ` : `
-        vec3 zen = vec3(0.3, 0.5, 1.0) * 0.95;
-        vec3 haze = vec3(0.8, 0.93, 0.9) * 1.0;
+        vec3 zen = vec3(0.24, 0.45, 1.0) * 0.6;
+        vec3 haze = vec3(0.62, 0.8, 0.9) * 0.62;
         vec3 c = mix(haze, zen, smoothstep(0.05, 0.9, y));
         // the forest closes in at the horizon: a soft wall of distant crowns, darker toward the ground
         float az = atan(d.z, d.x);
         float top = 0.3 + 0.05 * sin(az * 7.0) + 0.035 * sin(az * 19.0 + 1.3) + 0.02 * sin(az * 43.0 + 0.7);
-        vec3 wall = mix(uFog * 0.55, uFog * 1.25, smoothstep(-0.02, top, y));
+        vec3 wall = mix(uFog * 0.7, uFog * 2.2 + vec3(0.02, 0.05, 0.01), smoothstep(-0.02, top, y));
         c = mix(wall, c, smoothstep(top - 0.05, top + 0.06, y));
         float s = max(dot(d, normalize(uSun)), 0.0);
-        c += vec3(1.0, 0.92, 0.72) * (pow(s, 8.0) * 0.8 + pow(s, 400.0) * 60.0);
+        c += vec3(1.0, 0.9, 0.68) * (pow(s, 10.0) * 0.55 + pow(s, 400.0) * 60.0);
         `}
         gl_FragColor = vec4(c, 1.0);
       }`,

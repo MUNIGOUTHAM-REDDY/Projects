@@ -36,6 +36,10 @@ const VolumetricShader = {
     float sunVis(vec3 wp) {
       float far = smoothstep(uShadowRadius * 0.72, uShadowRadius * 0.98, length(wp.xz - uShadowCentre.xz));
       float g = canopyGobo(wp, uSunDir, far);
+      // individual holes in the high canopy: narrow, well-separated beams rather than an even veil
+      vec2 pc = wp.xz + uSunDir.xz / max(uSunDir.y, 0.2) * (16.0 - wp.y);
+      float holes = vnoise(pc * 0.75 + 5.0) * 0.6 + vnoise(pc * 1.9 - 2.0) * 0.4;
+      g *= 0.3 + 1.5 * smoothstep(0.56, 0.7, holes);
       vec4 sc = uShadowMatrix * vec4(wp, 1.0); sc.xyz /= sc.w;
       if (uShadowOn < 0.5 || sc.x < 0.0 || sc.x > 1.0 || sc.y < 0.0 || sc.y > 1.0 || sc.z > 1.0) return g;
       return step(sc.z - 0.001, unpackRGBAToDepth(texture2D(uShadowMap, sc.xy))) * g;
@@ -49,7 +53,7 @@ const VolumetricShader = {
       vec3 rd = wp - ro;
       float len = min(length(rd), 46.0);
       rd = normalize(rd);
-      const int N = 28;
+      const int N = 36;
       float jit = fract(52.9829189 * fract(dot(gl_FragCoord.xy + uSeed * 17.0, vec2(0.06711056, 0.00583715))));
       float acc = 0.0;
       float dt = len / float(N);
@@ -58,13 +62,13 @@ const VolumetricShader = {
         vec3 p = ro + rd * t;
         if (p.y < 0.0) break;
         // thin ground mist, thicker over the water and low down
-        float dens = (0.35 + 0.65 * exp(-max(p.y, 0.0) * 0.16)) * (0.75 + 0.5 * vnoise(p.xz * 0.21 + uTime * 0.03 + p.y * 0.3));
+        float dens = (0.3 + 0.7 * exp(-max(p.y, 0.0) * 0.14)) * (0.75 + 0.5 * vnoise(p.xz * 0.21 + uTime * 0.03 + p.y * 0.3));
         acc += sunVis(p) * dens * dt * exp(-t * 0.05);
       }
       float mu = dot(rd, uSunDir);
       float g = 0.5;
       float phase = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) * 0.25 + 0.1;
-      vec3 col = vec3(1.0, 0.93, 0.74) * acc * phase * 0.032 * uStrength;
+      vec3 col = vec3(1.0, 0.88, 0.62) * acc * phase * 0.017 * uStrength;
       gl_FragColor = vec4(col, 1.0);
     }`,
 };
@@ -74,13 +78,15 @@ const CompositeShader = {
     tColor: { value: null }, tDepth: { value: null }, tVol: { value: null },
     uRes: { value: new THREE.Vector2() }, uNear: { value: 0.1 }, uFar: { value: 400 },
     uFocus: { value: 8 }, uAperture: { value: 1 }, uDof: { value: 1 }, uVolOn: { value: 1 },
+    uProjInv: { value: new THREE.Matrix4() }, uCamWorld: { value: new THREE.Matrix4() }, uSunDir: G.uSunDir, uMist: { value: 1 },
   },
   vertexShader: FS_VERT,
   fragmentShader: /* glsl */ `
     #include <common>
     #include <packing>
     uniform sampler2D tColor, tDepth, tVol;
-    uniform vec2 uRes; uniform float uNear, uFar, uFocus, uAperture, uDof, uVolOn;
+    uniform vec2 uRes; uniform float uNear, uFar, uFocus, uAperture, uDof, uVolOn, uMist;
+    uniform mat4 uProjInv, uCamWorld; uniform vec3 uSunDir;
     varying vec2 vUv;
     float viewZ(vec2 uv){ return -perspectiveDepthToViewZ(texture2D(tDepth, uv).x, uNear, uFar); }
     float coc(float z){
@@ -109,6 +115,21 @@ const CompositeShader = {
           acc += texture2D(tColor, uv).rgb * w; wsum += w;
         }
         col = acc / wsum;
+      }
+      // Low mist: cool, pooled near the ground and over the water, thickening with distance; it warms toward the sun.
+      float dz = texture2D(tDepth, vUv).x;
+      if (dz < 1.0) {
+        vec4 vp = uProjInv * vec4(vUv * 2.0 - 1.0, dz * 2.0 - 1.0, 1.0); vp /= vp.w;
+        vec3 ro = (uCamWorld * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+        vec3 rd = (uCamWorld * vec4(vp.xyz, 1.0)).xyz - ro;
+        float t = length(rd); rd /= t;
+        float b = 0.3;
+        float ry = abs(rd.y) < 1e-3 ? 1e-3 : rd.y;
+        float od = 0.0075 * exp(-b * max(ro.y, 0.0)) * (1.0 - exp(-b * ry * t)) / (b * ry);
+        float f = (1.0 - exp(-max(od, 0.0))) * uMist;
+        float mu = max(dot(rd, uSunDir), 0.0);
+        vec3 mist = vec3(0.105, 0.17, 0.165) + vec3(0.32, 0.25, 0.12) * pow(mu, 3.0);
+        col = mix(col, mist, clamp(f, 0.0, 0.6));
       }
       if (uVolOn > 0.5) {
         vec2 px = 1.0 / uRes;
@@ -224,6 +245,7 @@ class ScenePass extends Pass {
     const c = this.compMat.uniforms;
     c.tColor.value = this.rtComp.texture; c.tDepth.value = this.depthTexture; c.tVol.value = this.rtVol.texture;
     c.uNear.value = camera.near; c.uFar.value = camera.far;
+    c.uProjInv.value.copy(camera.projectionMatrixInverse); c.uCamWorld.value.copy(camera.matrixWorld);
     c.uDof.value = this.dof ? 1 : 0; c.uVolOn.value = this.volumetrics ? 1 : 0;
     this.fsq.material = this.compMat;
     renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);

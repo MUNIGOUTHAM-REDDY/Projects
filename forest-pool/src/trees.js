@@ -48,7 +48,7 @@ class Limb {
 }
 
 // --- Tube mesh along a limb -------------------------------------------------------
-function tube(limb, { radial = 8, flare = 0, flareLobes = 5, flareH = 0.5, seed = 0, lumps = 0, collar = 0, knots = null, barkTile = 1.2, ground = null } = {}) {
+function tube(limb, { radial = 8, flare = 0, flareLobes = 5, flareH = 0.5, seed = 0, lumps = 0, collar = 0, knots = null, barkTile = 1.2, ground = null, tintV = null } = {}) {
   const { path } = limb;
   const P = path.p, n = P.length;
   const pos = [], uv = [], sway = [], col = [], idx = [];
@@ -89,7 +89,7 @@ function tube(limb, { radial = 8, flare = 0, flareLobes = 5, flareH = 0.5, seed 
       if (collar > 0) ao *= 1 - 0.4 * Math.exp(-dist / (limb.r0 * 1.2));
       pos.push(P[i].x + rr * (ca * N.x + sa * B.x), P[i].y + rr * (ca * N.y + sa * B.y), P[i].z + rr * (ca * N.z + sa * B.z));
       uv.push((j / radial) * uRep, dist / barkTile);
-      sway.push(sw); col.push(ao, ao, ao);
+      sway.push(sw); if (tintV) col.push(ao * tintV[0], ao * tintV[1], ao * tintV[2]); else col.push(ao, ao, ao);
     }
   }
   for (let i = 0; i < n - 1; i++) for (let j = 0; j < radial; j++) {
@@ -154,7 +154,9 @@ function sprout(parent, spec, r) {
     const pr = parent.radiusAt(t);
     const r0 = Math.max(rTip * 1.5, Math.min(pr * rRatio, 0.006 + L * 0.02));
     const s0 = parent.swayAt(t);
-    out.push(new Limb(new Path(pts), r0, rTip, s0, s0 + flex * L * L, parent.level + 1));
+    const child = new Limb(new Path(pts), r0, rTip, s0, s0 + flex * L * L, parent.level + 1);
+    child.tp = t;
+    out.push(child);
   }
   return out;
 }
@@ -168,28 +170,37 @@ function basis(pos, dir, nrm, sx, sy, sz, out) {
   return out.makeBasis(_c.copy(_a).multiplyScalar(sx), _a.copy(dir).multiplyScalar(sy), _b.multiplyScalar(sz)).setPosition(pos);
 }
 
-// Real leaves along a twig: alternate, in the plane spanned by the twig and the horizon, tips sagging.
-function leafTwig(limb, leaves, r, tint, { spacing = 0.036, size = 0.088, from = 0.1 } = {}) {
+// Real leaves along a twig: alternate and roughly in the twig's plane, but as untidy as the real thing:
+// uneven spacing bunched toward the tip, missing leaves, every size, each rolled and pitched its own way.
+function leafTwig(limb, leaves, r, tint, { spacing = 0.034, size = 0.088, from = 0.1, shade = 1 } = {}) {
   const n = Math.max(2, Math.floor(limb.path.L * (1 - from) / spacing));
   const P = V(0, 0, 0), T = V(0, 0, 0), side = V(0, 0, 0), dir = V(0, 0, 0), nrm = V(0, 0, 0);
   let s = r() < 0.5 ? 1 : -1;
+  const twigHue = r(), twigV = 0.85 + r() * 0.3;
   for (let k = 0; k <= n; k++) {
     const last = k === n;
-    const t = last ? 1 : from + (1 - from) * (k + 0.3 * r()) / n;
+    const u = (k + (r() - 0.5) * 0.9) / n;
+    const t = last ? 1 : from + (1 - from) * Math.pow(clamp(u, 0, 1), 0.72);
+    s = -s;
+    if (!last && r() < 0.42 - 0.3 * t) continue;            // gaps, mostly on the older wood
     limb.path.at(t, P); limb.path.tangent(t, T);
     side.crossVectors(T, UP);
     if (side.lengthSq() < 0.02) side.set(1, 0, 0);
-    side.normalize().multiplyScalar(s); s = -s;
-    const ang = last ? 0.15 * (r() - 0.5) : (0.75 + r() * 0.4);
+    side.normalize().multiplyScalar(s);
+    const ang = last ? 0.3 * (r() - 0.5) : (0.5 + r() * 0.85);
     dir.copy(T).multiplyScalar(Math.cos(ang)).addScaledVector(side, Math.sin(ang));
-    dir.y -= 0.12 + r() * 0.22;                           // petioles sag
+    dir.y += 0.12 - r() * 0.62;                            // most petioles sag, a few reach up
+    dir.x += (r() - 0.5) * 0.3; dir.z += (r() - 0.5) * 0.3;
     dir.normalize();
-    nrm.copy(UP).addScaledVector(side, (r() - 0.5) * 0.9).addScaledVector(T, (r() - 0.5) * 0.5).normalize();
-    const sc = size * (0.7 + 0.5 * Math.sin(Math.PI * Math.min(1, t * 1.1))) * (0.85 + r() * 0.3);
-    basis(P, dir, nrm, sc, sc, sc, _m);
-    const v = 0.78 + r() * 0.36, hue = r();
-    const variant = r() < 0.07 ? 3 : Math.floor(r() * 3);
-    leaves.add(_m, tint[0] * v * (0.92 + hue * 0.2), tint[1] * v, tint[2] * v * (0.8 + hue * 0.3), limb.swayAt(t), r(), variant);
+    nrm.copy(UP).addScaledVector(side, (r() - 0.5) * 1.7).addScaledVector(T, (r() - 0.5) * 1.2);
+    if (r() < 0.06) nrm.multiplyScalar(-1);                 // the odd leaf hangs twisted, pale side out
+    nrm.normalize();
+    const sc = size * (0.72 + 0.4 * Math.sin(Math.PI * Math.min(1, t * 1.1))) * (0.6 + r() * 0.8);
+    basis(P, dir, nrm, sc * (0.85 + r() * 0.3), sc, sc, _m);
+    const v = (0.72 + r() * 0.42) * twigV * shade, hue = twigHue * 0.6 + r() * 0.4;
+    const variant = r() < 0.08 ? 3 : Math.floor(r() * 3);
+    const yel = r() < 0.03 ? 1.35 : 1;
+    leaves.add(_m, tint[0] * v * (0.86 + hue * 0.32) * yel, tint[1] * v * (0.96 + hue * 0.08), tint[2] * v * (0.7 + hue * 0.5), limb.swayAt(t), r(), variant);
   }
 }
 
@@ -247,7 +258,7 @@ function barkMaterial(name, { tint = [1, 1, 1], desat = 0.3, moss = 1, lichen = 
           c *= mix(0.72, 1.08, smoothstep(0.25, 0.7, streak));
           float li = vnoise(vec2(ang * 1.6, vUW.y * 1.3) + vUW.xz * 0.7) * 0.6 + vnoise(vec2(ang * 5.0, vUW.y * 4.0) + vUW.xz * 2.0) * 0.4;
           li = smoothstep(0.56, 0.7, li) * ${lichen.toFixed(2)};
-          c = mix(c, vec3(0.50, 0.55, 0.44) * (0.5 + l * 1.4), li);
+          c = mix(c, vec3(0.40, 0.45, 0.36) * (0.5 + l * 1.4), li);
           // moss: thick at the base, creeping up the damp north side and along the tops of limbs
           float ground = texture2D(tBakeB, (vUW.xz - uBakeB.xy) * uBakeB.z).r;
           float hRel = vUW.y - max(ground, 0.0);
@@ -285,9 +296,9 @@ function addKnots(r, L, n, rad) {
 }
 
 // Surface roots: snake outward from the flare, half buried, diving into the soil (or the river).
-function roots(x, z, y0, r, geos, { count = 6, len = 2.2, rad = 0.11, seed = 0 }) {
+function roots(x, z, y0, r, geos, { count = 6, len = 2.2, rad = 0.11, seed = 0, heading = null, spread = 0.9, tintV = null }) {
   for (let i = 0; i < count; i++) {
-    let a = seed + (i / count) * 6.283 + (r() - 0.5) * 0.5;
+    let a = heading === null ? seed + (i / count) * 6.283 + (r() - 0.5) * 0.5 : heading + ((i + 0.5) / count - 0.5) * 2 * spread + (r() - 0.5) * 0.3;
     const L = len * (0.55 + r() * 0.7), n = 7, pts = [];
     let px = x + Math.cos(a) * 0.1, pz = z + Math.sin(a) * 0.1;
     pts.push(V(px, y0 + 0.5, pz));
@@ -300,28 +311,44 @@ function roots(x, z, y0, r, geos, { count = 6, len = 2.2, rad = 0.11, seed = 0 }
       pts.push(V(px, g + rr * (0.55 - 1.6 * f * f) + (k === 1 ? 0.12 : 0), pz));
     }
     const limb = new Limb(smoothPath(pts, 6), rad * (0.8 + r() * 0.5), 0.012, 0, 0, 1);
-    geos.push(tube(limb, { radial: 9, lumps: 0.16, seed: seed + i * 3.1, collar: 0.5, barkTile: 0.7 }));
+    geos.push(tube(limb, { radial: heading === null ? 9 : 6, lumps: 0.16, seed: seed + i * 3.1, collar: 0.5, barkTile: 0.7, tintV }));
   }
 }
 
 function growHero(mains, r, out, tint, { branchCount = 14, twigDensity = 1 } = {}) {
   for (const main of mains) {
     const big = main.path.L > 4;
-    const l1 = big ? sprout(main, { count: branchCount * main.path.L / 7, t0: 0.22, t1: 0.97, angle: [42, 68], len: (t, p) => Math.min(2.6, 0.5 + p.path.L * 0.32) * (1 - 0.45 * t), rRatio: 0.42, up: 0.12, droop: 0.1, planar: true, wiggle: 0.14, segs: 6, flex: 0.012, twist: 0.5 }, r) : [];
-    l1.push(new Limb(new Path(main.path.p.slice(-3)), main.radiusAt(0.9), 0.004, main.swayAt(0.9), main.s1, main.level + 1));
-    if (!big) l1.push(main);
+    const t0 = main.r0 > 0.15 ? 0.34 : 0.12;               // heavy leaders stay clean near the fork
+    const l1 = big ? sprout(main, { count: branchCount * main.path.L / 7, t0, t1: 0.97, angle: [42, 68], len: (t, p) => Math.min(2.6, 0.5 + p.path.L * 0.32) * (1 - 0.45 * t), rRatio: 0.42, up: 0.12, droop: 0.1, planar: true, wiggle: 0.2, segs: 6, flex: 0.012, twist: 0.5 }, r) : [];
+    const tail = new Limb(new Path(main.path.p.slice(-3)), main.radiusAt(0.9), 0.004, main.swayAt(0.9), main.s1, main.level + 1);
+    tail.tp = 1; tail.isTail = true;
+    l1.push(tail);
+    if (!big) { main.tp = 0.7; l1.push(main); }
     for (const b1 of l1) {
-      if (b1 !== main) out.geos.push(tube(b1, { radial: 6, collar: 0.5, barkTile: 0.6 }));
-      const l2 = sprout(b1, { count: Math.max(2, b1.path.L * 5.6), t0: 0.18, t1: 0.96, angle: [38, 62], len: (t, p) => Math.min(1.0, 0.25 + p.path.L * 0.38) * (1 - 0.4 * t), rRatio: 0.5, rTip: 0.003, up: 0.05, droop: 0.22, planar: true, wiggle: 0.16, segs: 4, flex: 0.02 }, r);
-      l2.push(new Limb(new Path(b1.path.p.slice(-2)), b1.radiusAt(0.85), 0.003, b1.swayAt(0.85), b1.s1, b1.level + 1));
+      if (b1 !== main && !b1.isTail) out.geos.push(tube(b1, { radial: 6, collar: 0.5, barkTile: 0.6 }));
+      const outer1 = 0.72 + 0.3 * (b1.tp ?? 0.7);
+      const l2 = sprout(b1, { count: Math.max(2, b1.path.L * 5.6), t0: 0.18, t1: 0.96, angle: [38, 62], len: (t, p) => Math.min(1.0, 0.25 + p.path.L * 0.38) * (1 - 0.4 * t), rRatio: 0.5, rTip: 0.003, up: 0.05, droop: 0.22, planar: true, wiggle: 0.2, segs: 4, flex: 0.02 }, r);
+      const t2 = new Limb(new Path(b1.path.p.slice(-2)), b1.radiusAt(0.85), 0.003, b1.swayAt(0.85), b1.s1, b1.level + 1);
+      t2.tp = 1; l2.push(t2);
       for (const b2 of l2) {
+        // leaves deep inside the crown sit in the shade of the shell
+        const shade = outer1 * (0.6 + 0.45 * b2.tp);
         out.twigs.push(tube(b2, { radial: 4, barkTile: 0.5 }));
-        const l3 = sprout(b2, { count: Math.max(1, b2.path.L * 8.5 * twigDensity), t0: 0.15, t1: 0.92, angle: [35, 58], len: (t, p) => Math.min(0.5, 0.16 + p.path.L * 0.45), rRatio: 0.6, rTip: 0.002, droop: 0.35, planar: true, wiggle: 0.12, segs: 3, flex: 0.03 }, r);
-        for (const tw of l3) { out.twigs.push(tube(tw, { radial: 3, barkTile: 0.5 })); leafTwig(tw, out.leaves, r, tint); }
-        leafTwig(b2, out.leaves, r, tint, { from: 0.45 });
+        const l3 = sprout(b2, { count: Math.max(1, b2.path.L * 8.5 * twigDensity), t0: 0.15, t1: 0.92, angle: [30, 62], len: (t, p) => Math.min(0.5, 0.16 + p.path.L * 0.45), rRatio: 0.6, rTip: 0.002, droop: 0.35, planar: true, wiggle: 0.18, segs: 3, flex: 0.03 }, r);
+        for (const tw of l3) { out.twigs.push(tube(tw, { radial: 3, barkTile: 0.5 })); leafTwig(tw, out.leaves, r, tint, { shade: shade * (0.85 + 0.2 * tw.tp) }); }
+        leafTwig(b2, out.leaves, r, tint, { from: 0.45, shade });
       }
     }
   }
+}
+
+// Limbs are never smooth arcs: jog the control points so they kink where old side branches were shed.
+function kinked(pts, r, amt = 0.1) {
+  return pts.map((p, i) => {
+    if (i === 0 || i === pts.length - 1) return p;
+    const seg = p.distanceTo(pts[i - 1]) * amt;
+    return V(p.x + (r() - 0.5) * 2 * seg, p.y + (r() - 0.5) * 1.4 * seg, p.z + (r() - 0.5) * 2 * seg);
+  });
 }
 
 function heroLeft(out, r) {
@@ -335,7 +362,7 @@ function heroLeft(out, r) {
   trunk.swayAt = (t) => 0.5 * Math.pow(Math.max(0, t - 0.12), 2);
   out.geos.push(tube(trunk, { radial: 30, flare: 1.15, flareLobes: 5, flareH: 0.42, seed: 1.3, lumps: 0.07, knots: addKnots(r, 6, 9, 0.36), barkTile: 1.5, ground: y0 }));
   roots(x, z, y0, r, out.geos, { count: 7, len: 2.4, rad: 0.12, seed: 0.4 });
-  const leader = (pts, r0, r1, s1) => new Limb(smoothPath(pts, 6), r0, r1, 0.004, s1, 1);
+  const leader = (pts, r0, r1, s1) => new Limb(smoothPath(kinked(pts, r, r0 > 0.15 ? 0.05 : 0.16), 6), r0, r1, 0.004, s1, 1);
   const mains = [
     // arches right, across the path and the top of the frame
     leader([P(0.16, 2.15, -0.16), P(0.72, 3.15, -0.12), P(1.6, 4.15, 0.08), P(2.75, 4.95, 0.2), P(4.05, 5.55, 0.02), P(5.4, 6.3, -0.4), P(6.7, 7.5, -0.9)], 0.24, 0.035, 0.55),
@@ -363,7 +390,7 @@ function heroRight(out, r) {
   trunk.swayAt = (t) => 0.9 * Math.pow(Math.max(0, t - 0.1), 2.2);
   out.geos.push(tube(trunk, { radial: 26, flare: 1.5, flareLobes: 4, flareH: 0.55, seed: 4.1, lumps: 0.06, knots: addKnots(r, 9, 10, 0.3), barkTile: 1.5, ground: y0 }));
   roots(x, z, y0, r, out.geos, { count: 8, len: 2.9, rad: 0.13, seed: 2.2 });
-  const leader = (pts, r0, r1, s1) => new Limb(smoothPath(pts, 6), r0, r1, 0.004, s1, 1);
+  const leader = (pts, r0, r1, s1) => new Limb(smoothPath(kinked(pts, r, r0 > 0.15 ? 0.05 : 0.16), 6), r0, r1, 0.004, s1, 1);
   const mains = [
     // low branches sweeping out over the pool
     leader([P(-0.08, 2.9, -0.06), P(-0.7, 3.4, -0.3), P(-1.6, 3.6, -0.75), P(-2.7, 3.45, -1.2), P(-3.8, 3.6, -1.5)], 0.075, 0.012, 0.4),
@@ -379,7 +406,7 @@ function heroRight(out, r) {
     const base = trunkPath.at(h / trunkPath.L * 1.02 + 0.03);
     const dir = V(Math.cos(az), 0.45 + t * 0.6, Math.sin(az)).normalize();
     const pts = [base.clone()], cur = base.clone();
-    for (let i = 1; i <= 5; i++) { dir.y += 0.07 - 0.02 * i; dir.x += (r() - 0.5) * 0.12; dir.z += (r() - 0.5) * 0.12; dir.normalize(); cur.addScaledVector(dir, len / 5); pts.push(cur.clone()); }
+    for (let i = 1; i <= 5; i++) { dir.y += 0.07 - 0.02 * i; dir.x += (r() - 0.5) * 0.3; dir.z += (r() - 0.5) * 0.3; dir.normalize(); cur.addScaledVector(dir, len / 5); pts.push(cur.clone()); }
     mains.push(leader(pts, lerp(0.12, 0.05, t), 0.012, 0.3 + t * 0.4));
   }
   mains.forEach((m, i) => out.geos.push(tube(m, { radial: 10, collar: 0.6, lumps: 0.04, seed: i, barkTile: 0.75 })));
@@ -387,50 +414,26 @@ function heroRight(out, r) {
 }
 
 // --- Forest ---------------------------------------------------------------------------
-function forestTree(x, z, r, out, kind) {
-  const y0 = heightAt(x, z);
-  const far = kind === 'far', mid = kind === 'mid';
-  const H = 21 + r() * 9, R = 0.24 + r() * r() * 0.46;
-  // Trees on the bank lean out over the water toward the light.
-  const rv = river(x, z);
-  const e = Math.abs(rv.d) - rv.w;
-  const toward = -Math.sign(rv.d) * smoothstep(9, 1.5, e) * (0.05 + r() * 0.12);
-  const lx = -rv.tz * toward + (r() - 0.5) * 0.06, lz = rv.tx * toward + (r() - 0.5) * 0.06;
-  const ctrl = [];
-  const bend = (r() - 0.5) * 0.9, ba = r() * 6.28;
-  for (let i = 0; i <= 6; i++) {
-    const f = i / 6, h = f * H;
-    const s = Math.sin(f * Math.PI) * bend;
-    ctrl.push(V(x + lx * h * (0.6 + f) + Math.cos(ba) * s + (i > 0 ? (r() - 0.5) * 0.18 : 0), y0 - 0.6 + h, z + lz * h * (0.6 + f) + Math.sin(ba) * s + (i > 0 ? (r() - 0.5) * 0.18 : 0)));
-  }
-  const path = smoothPath(ctrl, far ? 0.5 : 1.3);
-  const trunk = new Limb(path, R, R * 0.16, 0, 1.0, 0);
-  trunk.radiusAt = (t) => R * (1 - 0.84 * Math.pow(t, 1.25));
-  trunk.swayAt = (t) => 1.0 * Math.pow(Math.max(0, t - 0.1), 2.3);
-  out.geos.push(tube(trunk, { radial: far ? 7 : 14, flare: far ? 0 : 0.85, flareLobes: 4 + Math.floor(r() * 3), flareH: 0.4 + R * 0.5, seed: r() * 10, lumps: far ? 0 : 0.05, barkTile: 1.3, ground: y0 }));
-  out.contacts.push({ x, z, r: R * 2.6, dark: 0.5, moss: 0.6 });
-  // crown: long clear bole, then scaffold limbs spiralling up
-  const crown0 = 0.36 + r() * 0.14;
-  const tint = [0.9 + r() * 0.25, 0.95 + r() * 0.12, 0.8 + r() * 0.3];
+// One crown axis (a trunk or a co-dominant leader) carrying scaffold limbs that spiral up it.
+function crown(axis, r, out, { t0, nL, lenBase, far, mid, tint, tintV, H }) {
   let az = r() * 6.28;
-  const nL = far ? 10 : 14 + Math.floor(r() * 5);
   for (let k = 0; k < nL; k++) {
     const f = (k + r() * 0.6) / nL;
-    const t = lerp(crown0, 0.97, Math.pow(f, 0.9));
-    az += 2.39996 + (r() - 0.5) * 0.7;
-    const base = path.at(t);
-    const len = lerp(7.4, 2.4, smoothstep(0.15, 1, f)) * (0.75 + r() * 0.5) * (H / 26);
-    const dir = V(Math.cos(az), 0.3 + f * 0.75, Math.sin(az)).normalize();
+    const t = lerp(t0, 0.97, Math.pow(f, 0.9));
+    az += 2.39996 + (r() - 0.5) * 0.9;
+    const base = axis.path.at(t);
+    const len = lerp(lenBase, lenBase * 0.32, smoothstep(0.15, 1, f)) * (0.6 + r() * 0.8);
+    const dir = V(Math.cos(az), 0.25 + f * 0.8 + (r() - 0.5) * 0.3, Math.sin(az)).normalize();
     const pts = [base.clone()], cur = base.clone(), segs = far ? 3 : 5;
-    for (let i = 1; i <= segs; i++) { dir.y += 0.09 - 0.03 * i * (5 / segs); dir.x += (r() - 0.5) * 0.14; dir.z += (r() - 0.5) * 0.14; dir.normalize(); cur.addScaledVector(dir, len / segs); pts.push(cur.clone()); }
-    const s0 = trunk.swayAt(t);
-    const limb = new Limb(new Path(pts), Math.min(trunk.radiusAt(t) * 0.55, 0.12), 0.012, s0, s0 + 0.35, 1);
-    out.geos.push(tube(limb, { radial: far ? 4 : 6, collar: 0.5, barkTile: 0.8 }));
-    const shade = lerp(0.72, 1.05, f);                      // lower crown sits in the shade of the upper
+    for (let i = 1; i <= segs; i++) { dir.y += 0.09 - 0.03 * i * (5 / segs); dir.x += (r() - 0.5) * 0.3; dir.z += (r() - 0.5) * 0.3; dir.normalize(); cur.addScaledVector(dir, len / segs); pts.push(cur.clone()); }
+    const s0 = axis.swayAt(t);
+    const limb = new Limb(new Path(pts), Math.min(axis.radiusAt(t) * 0.55, 0.014 + len * 0.016), 0.012, s0, s0 + 0.35, 1);
+    out.geos.push(tube(limb, { radial: far ? 4 : 6, collar: 0.5, barkTile: 0.8, tintV }));
+    const shade = lerp(0.66, 1.05, f);                      // lower crown sits in the shade of the upper
     if (far) { sprayBranch(limb, out.boughs, r, tint, { spacing: 0.8, size: 2.7, from: 0.2, variants: 2, sag: 0.2, shade }); continue; }
-    const branches = sprout(limb, { count: mid ? 5 : 8.5, t0: 0.25, t1: 0.95, angle: [40, 65], len: (tt) => (0.9 + len * 0.26) * (1 - 0.4 * tt), rRatio: 0.45, rTip: 0.006, up: 0.04, droop: 0.12, planar: true, wiggle: 0.14, segs: 3, flex: 0.02, twist: 0.4 }, r);
+    const branches = sprout(limb, { count: (mid ? 5 : 8.5) * len / 5.5, t0: 0.2, t1: 0.95, angle: [40, 65], len: (tt) => (0.9 + len * 0.26) * (1 - 0.4 * tt), rRatio: 0.45, rTip: 0.006, up: 0.04, droop: 0.12, planar: true, wiggle: 0.2, segs: 3, flex: 0.02, twist: 0.4 }, r);
     for (const b of branches) {
-      out.small.push(tube(b, { radial: 4, barkTile: 0.6 }));
+      out.small.push(tube(b, { radial: 4, barkTile: 0.6, tintV }));
       if (mid) sprayBranch(b, out.boughs, r, tint, { spacing: 0.9, size: 1.9, from: 0.2, variants: 2, shade });
       else sprayBranch(b, out.sprays, r, tint, { spacing: 0.3, size: 0.85, from: 0.12, shade });
     }
@@ -439,22 +442,107 @@ function forestTree(x, z, r, out, kind) {
   }
 }
 
+// Forest trees come in several characters: tall clean-boled beeches, heavy old trees that fork into
+// co-dominant leaders, slender leaning poles with low crowns, and the occasional dead snag.
+function forestTree(x, z, r, out, kind) {
+  const y0 = heightAt(x, z);
+  const far = kind === 'far', mid = kind === 'mid';
+  const k = r();
+  const type = far ? (k < 0.25 ? 'old' : 'beech') : k < 0.05 ? 'snag' : k < 0.24 ? 'old' : k < 0.5 ? 'young' : 'beech';
+  let H = 21 + r() * 9, R = 0.22 + r() * r() * 0.3;
+  if (type === 'old') { H = 25 + r() * 8; R = 0.46 + r() * 0.3; }
+  if (type === 'young') { H = 10 + r() * 7; R = 0.07 + H * 0.006 + r() * 0.03; }
+  if (type === 'snag') { H = 5 + r() * 7; R = 0.22 + r() * 0.2; }
+  // Trees on the bank lean out over the water toward the light; everything else leans a few degrees its own way.
+  const rv = river(x, z);
+  const e = Math.abs(rv.d) - rv.w;
+  const toward = -Math.sign(rv.d) * smoothstep(9, 1.5, e) * (0.05 + r() * 0.13);
+  const la = r() * 6.283, lm = (type === 'young' ? 0.06 + r() * 0.16 : 0.02 + r() * 0.1);
+  const lx = -rv.tz * toward + Math.cos(la) * lm, lz = rv.tx * toward + Math.sin(la) * lm;
+  const ctrl = [];
+  const bend = (r() - 0.5) * (type === 'young' ? 1.6 : 1.1), ba = r() * 6.28;
+  for (let i = 0; i <= 6; i++) {
+    const f = i / 6, h = f * H;
+    const sb = Math.sin(f * Math.PI) * bend;
+    const j = i > 0 ? 0.26 : 0;
+    ctrl.push(V(x + lx * h * (0.6 + f) + Math.cos(ba) * sb + (r() - 0.5) * j, y0 - 0.6 + h, z + lz * h * (0.6 + f) + Math.sin(ba) * sb + (r() - 0.5) * j));
+  }
+  const path = smoothPath(ctrl, far ? 0.5 : 1.3);
+  const trunk = new Limb(path, R, R * 0.16, 0, 1.0, 0);
+  const snag = type === 'snag';
+  trunk.radiusAt = (t) => (snag ? R * (1 - 0.35 * t) : R * (1 - 0.84 * Math.pow(t, 1.25)));
+  trunk.swayAt = (t) => (snag ? 0 : (type === 'young' ? 1.4 : 1.0) * Math.pow(Math.max(0, t - 0.1), 2.3));
+  // every trunk its own shade of grey: some weathered pale, some dark and wet-looking, a few green with algae
+  const bv = snag ? 0.7 : 0.72 + r() * 0.4, bh = r();
+  const tintV = [bv * (0.96 + bh * 0.08), bv * (0.98 + (1 - bh) * 0.06), bv * (0.9 + bh * 0.1)];
+  out.geos.push(tube(trunk, { radial: far ? 7 : type === 'young' ? 9 : 14, flare: far ? 0 : type === 'old' ? 1.15 : 0.8, flareLobes: 4 + Math.floor(r() * 3), flareH: 0.4 + R * 0.6, seed: r() * 10, lumps: far ? 0 : snag ? 0.12 : 0.06, knots: far || type === 'young' ? null : addKnots(r, Math.min(8, H * 0.4), 5, R), barkTile: 1.3, ground: y0, tintV }));
+  out.contacts.push({ x, z, r: R * 2.6, dark: 0.5, moss: 0.6 });
+  // roots exposed where the bank has been washed out from under the tree
+  if (!far && e < 3.4 && type !== 'young') {
+    const heading = Math.atan2(rv.tx * -Math.sign(rv.d), -rv.tz * -Math.sign(rv.d));
+    roots(x, z, y0, r, out.geos, { count: 3 + Math.floor(r() * 3), len: e + 1.6, rad: 0.05 + R * 0.16, seed: r() * 9, heading, spread: 0.7, tintV });
+  }
+  if (snag) {
+    // broken stubs and one or two dead limbs
+    const stubs = sprout(trunk, { count: 4, t0: 0.35, t1: 0.98, angle: [50, 85], len: () => 0.5 + r() * 1.6, rRatio: 0.4, rTip: 0.02, planar: false, wiggle: 0.3, segs: 3, droop: 0.15 }, r);
+    for (const b of stubs) out.geos.push(tube(b, { radial: 5, collar: 0.5, barkTile: 0.7, tintV }));
+    return;
+  }
+  const tint = [0.86 + r() * 0.3, 0.94 + r() * 0.14, 0.72 + r() * 0.4];
+  const crown0 = type === 'young' ? 0.25 + r() * 0.2 : type === 'old' ? 0.3 + r() * 0.12 : 0.34 + r() * 0.26;
+  const lenBase = (type === 'young' ? 3.4 : type === 'old' ? 8.5 : 7.0) * (H / 26) * (type === 'young' ? 26 / H * 0.9 : 1);
+  const nL = far ? 10 : type === 'young' ? 9 + Math.floor(r() * 4) : 13 + Math.floor(r() * 5);
+  const o = { far, mid, tint, tintV, H };
+  if (type === 'old' && !far) {
+    // co-dominant leaders split off low in the crown and carry their own limbs
+    const nLead = 1 + Math.floor(r() * 2);
+    const leaders = sprout(trunk, { count: nLead, t0: crown0 - 0.02, t1: crown0 + 0.12, angle: [18, 32], len: () => H * (0.42 + r() * 0.12), rRatio: 0.8, rTip: 0.03, up: 0.1, planar: false, wiggle: 0.12, segs: 6, flex: 0.004 }, r);
+    for (const l of leaders) {
+      l.r0 = trunk.radiusAt(l.tp) * 0.72;
+      out.geos.push(tube(l, { radial: 10, collar: 0.3, lumps: 0.05, barkTile: 1.3, tintV }));
+      crown(l, r, out, { ...o, t0: 0.3, nL: 8, lenBase: lenBase * 0.75 });
+    }
+    crown(trunk, r, out, { ...o, t0: crown0 + 0.12, nL: nL - 3, lenBase });
+  } else crown(trunk, r, out, { ...o, t0: crown0, nL, lenBase });
+}
+
 // Understory beech saplings: thin whippy stems with flat layered sprays, the bright mid-level green.
 function sapling(x, z, r, out) {
   const y0 = heightAt(x, z);
-  const H = 1.4 + r() * r() * 4.5, R = 0.012 + H * 0.007;
+  const H = 1.2 + r() * r() * 4.2, R = 0.012 + H * 0.007;
   const lean = r() * 6.28, la = 0.1 + r() * 0.25;
   const ctrl = [];
-  for (let i = 0; i <= 4; i++) { const f = i / 4; ctrl.push(V(x + Math.cos(lean) * la * H * f * f, y0 - 0.1 + H * f, z + Math.sin(lean) * la * H * f * f)); }
+  for (let i = 0; i <= 4; i++) { const f = i / 4; ctrl.push(V(x + Math.cos(lean) * la * H * f * f + (i ? (r() - 0.5) * 0.12 : 0), y0 - 0.1 + H * f, z + Math.sin(lean) * la * H * f * f + (i ? (r() - 0.5) * 0.12 : 0))); }
   const stem = new Limb(smoothPath(ctrl, 3), R, 0.004, 0, 0.12 * H * 0.4, 0);
   out.small.push(tube(stem, { radial: 5, barkTile: 0.4 }));
-  const tint = [0.95 + r() * 0.2, 1.02 + r() * 0.1, 0.75 + r() * 0.25];
-  const br = sprout(stem, { count: 3 + H * 2.2, t0: 0.25, t1: 0.97, angle: [55, 80], len: (t) => (0.45 + H * 0.22) * (1 - 0.55 * t), rRatio: 0.5, rTip: 0.003, up: 0.02, droop: 0.1, planar: false, wiggle: 0.12, segs: 3, flex: 0.05 }, r);
+  const tint = [0.9 + r() * 0.2, 0.98 + r() * 0.1, 0.72 + r() * 0.25];
+  const br = sprout(stem, { count: 5 + H * 3.4, t0: 0.2, t1: 0.97, angle: [50, 80], len: (t) => (0.4 + H * 0.2) * (1 - 0.55 * t), rRatio: 0.5, rTip: 0.003, up: 0.02, droop: 0.1, planar: false, wiggle: 0.16, segs: 3, flex: 0.05 }, r);
   for (const b of br) {
     out.small.push(tube(b, { radial: 3, barkTile: 0.4 }));
-    sprayBranch(b, out.sprays, r, tint, { spacing: 0.3, size: 0.62, from: 0.2, sag: 0.15, shade: 1.0 });
+    sprayBranch(b, out.sprays, r, tint, { spacing: 0.17, size: 0.5, from: 0.1, sag: 0.15, shade: 0.9 });
   }
-  sprayBranch(stem, out.sprays, r, tint, { spacing: 0.4, size: 0.6, from: 0.8 });
+  sprayBranch(stem, out.sprays, r, tint, { spacing: 0.22, size: 0.5, from: 0.55, shade: 0.95 });
+}
+
+// Understory shrubs: several arching stems from one stool, densely leafed, 2-4 m tall.
+function shrub(x, z, r, out) {
+  const y0 = heightAt(x, z);
+  const n = 4 + Math.floor(r() * 5);
+  const tint = [0.8 + r() * 0.2, 0.92 + r() * 0.12, 0.62 + r() * 0.25];
+  out.contacts.push({ x, z, r: 0.5, dark: 0.45, moss: 0.3 });
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * 6.283 + r(), H = 1.6 + r() * 2.4, out0 = 0.5 + r() * 1.1;
+    const ctrl = [];
+    for (let q = 0; q <= 4; q++) { const f = q / 4; ctrl.push(V(x + Math.cos(a) * (0.08 + out0 * f * f * 1.4) + (q ? (r() - 0.5) * 0.15 : 0), y0 - 0.08 + H * (f - 0.22 * f * f), z + Math.sin(a) * (0.08 + out0 * f * f * 1.4) + (q ? (r() - 0.5) * 0.15 : 0))); }
+    const stem = new Limb(smoothPath(ctrl, 3), 0.014 + H * 0.005, 0.004, 0, 0.1 * H, 0);
+    out.small.push(tube(stem, { radial: 4, barkTile: 0.4 }));
+    const br = sprout(stem, { count: 5 + H * 3, t0: 0.22, t1: 0.97, angle: [45, 75], len: (t) => (0.35 + H * 0.16) * (1 - 0.5 * t), rRatio: 0.5, rTip: 0.003, droop: 0.12, planar: false, wiggle: 0.18, segs: 3, flex: 0.05 }, r);
+    for (const b of br) {
+      out.small.push(tube(b, { radial: 3, barkTile: 0.4 }));
+      sprayBranch(b, out.sprays, r, tint, { spacing: 0.15, size: 0.44, from: 0.1, sag: 0.2, shade: 0.72 + 0.3 * b.tp });
+    }
+    sprayBranch(stem, out.sprays, r, tint, { spacing: 0.2, size: 0.46, from: 0.5, shade: 0.95 });
+  }
 }
 
 export function createTrees(quality) {
@@ -482,7 +570,10 @@ export function createTrees(quality) {
   while (nNear < nearTarget && tries++ < 9000) {
     const ang = r() * 6.283, rad = 5 + Math.pow(r(), 0.75) * 50;
     const x = -1 + Math.cos(ang) * rad, z = -3 + Math.sin(ang) * rad;
-    if (!okGround(x, z, 0.9 + r() * 2.5) || tooClose(x, z, 3.6 + r() * 2.2)) continue;
+    // groves and gaps: trees crowd together in places and leave glades elsewhere
+    const grove = clamp(0.5 + 1.6 * fbm(x * 0.07, z * 0.07, 2, 70), 0, 1);
+    if (r() > 0.25 + 0.75 * grove) continue;
+    if (!okGround(x, z, 0.9 + r() * 2.5) || tooClose(x, z, lerp(6.5, 2.3, grove) * (0.75 + r() * 0.5))) continue;
     placed.push({ x, z }); nNear++;
     forestTree(x, z, r, forest, Math.hypot(x + 1, z + 3) < (hi ? 30 : 20) ? 'near' : 'mid');
   }
@@ -498,19 +589,32 @@ export function createTrees(quality) {
   }
   // Understory.
   let nSap = 0; tries = 0;
-  const sapTarget = hi ? 150 : 70;
+  const sapTarget = hi ? 130 : 60;
   const saps = [];
   while (nSap < sapTarget && tries++ < 9000) {
     const ang = r() * 6.283, rad = 3 + Math.pow(r(), 0.9) * 40;
     const x = -1 + Math.cos(ang) * rad, z = -3 + Math.sin(ang) * rad;
     if (!okGround(x, z, 0.5) || saps.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < 1.6) || tooClose(x, z, 0.9)) continue;
     if (fbm(x * 0.09, z * 0.09, 2, 40) < -0.08) continue;      // saplings come in thickets
+    if (x > -2.4 && x < 3.4 && z > 0.5 && z < 9.5) continue;   // keep the view down the trail to the water open
     saps.push({ x, z }); nSap++;
     sapling(x, z, r, forest);
   }
 
+  let nShrub = 0; tries = 0;
+  const shrubTarget = hi ? 46 : 20;
+  while (nShrub < shrubTarget && tries++ < 6000) {
+    const ang = r() * 6.283, rad = 6 + Math.pow(r(), 0.8) * 30;
+    const x = -1 + Math.cos(ang) * rad, z = -3 + Math.sin(ang) * rad;
+    if (!okGround(x, z, 0.8) || tooClose(x, z, 1.6) || saps.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < 4)) continue;
+    if (Math.hypot(x - 0.2, z - 8.4) < 6 || pathDist(x, z) < 3) continue;
+    if (fbm(x * 0.08 + 20, z * 0.08, 2, 44) < 0.0) continue;
+    saps.push({ x, z }); nShrub++;
+    shrub(x, z, r, forest);
+  }
+
   const barkHero = barkMaterial('japanese_hackberry_bark', { tint: [1.5, 1.5, 1.38], desat: 0.5, moss: 0.85, lichen: 0.6, normal: 1.7, mossHeight: 1.3 });
-  const barkForest = barkMaterial('japanese_hackberry_bark', { tint: [1.3, 1.3, 1.2], desat: 0.55, moss: 0.85, lichen: 0.7, normal: 1.2, mossHeight: 1.3 });
+  const barkForest = barkMaterial('japanese_hackberry_bark', { tint: [1.12, 1.12, 1.04], desat: 0.5, moss: 0.9, lichen: 0.4, normal: 1.4, mossHeight: 1.4 });
   const depth = barkDepth();
 
   const group = new THREE.Group();

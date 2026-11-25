@@ -120,6 +120,9 @@ export function createTerrain(quality, splat) {
         // contact shade under rocks, trunks and plants; distant ground falls into forest shade
         col *= mix(0.42, 1.0, sp.a);
         col *= 0.7 + 0.55 * big;
+        // break up repetition at the scale of the texture tile and over whole glades
+        col *= (0.82 + 0.36 * vnoise(vUW.xz * 0.37 + 11.0)) * (0.85 + 0.3 * vnoise(vUW.xz * 0.027 + 4.0));
+        col = mix(col, col.grb * vec3(0.9, 1.0, 0.8), 0.18 * vnoise(vUW.xz * 0.19 + 30.0));
         tNs = nrm * 2.0 - 1.0;
         diffuseColor.rgb *= col;
       `)

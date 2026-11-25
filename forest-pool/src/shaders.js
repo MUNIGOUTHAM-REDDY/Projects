@@ -7,8 +7,8 @@ export const G = {
   uWind: { value: 1 },
   uSunDir: { value: new THREE.Vector3(-0.42, 0.74, -0.52).normalize() },
   uWaterY: { value: 0 },
-  uWaterScatter: { value: new THREE.Color(0.012, 0.16, 0.17) },
-  uAbsorb: { value: new THREE.Vector3(0.62, 0.11, 0.16) },
+  uWaterScatter: { value: new THREE.Color(0.006, 0.105, 0.12) },
+  uAbsorb: { value: new THREE.Vector3(0.55, 0.075, 0.115) },
   uShadowCentre: { value: new THREE.Vector3(0, 0, 0) },
   uShadowRadius: { value: 30 },
   tBake: { value: null },          // rgba: bed height, flow x, flow z, foam
@@ -119,23 +119,23 @@ export function underwater(mat, { caustics = true, wet = true } = {}) {
         ${CAUSTIC_GLSL}`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
         ${wet ? `{
-          float wl = vUW.y - uWaterY + 0.035 * (vnoise(vUW.xz * 2.3) - 0.5);
-          float wetK = smoothstep(0.17, 0.02, wl);
-          diffuseColor.rgb *= mix(1.0, 0.5, wetK);
-          roughnessFactor = mix(roughnessFactor, 0.22, wetK * step(uWaterY - 0.01, vUW.y));
+          float wl = vUW.y - uWaterY + 0.12 * (vnoise(vUW.xz * 1.7) - 0.5) + 0.05 * (vnoise(vUW.xz * 7.0) - 0.5);
+          float wetK = smoothstep(0.24, 0.05, wl);
+          diffuseColor.rgb *= mix(1.0, 0.42, wetK);
+          roughnessFactor = mix(roughnessFactor, 0.45, wetK * step(uWaterY - 0.01, vUW.y));
         }` : ''}`)
       .replace('#include <opaque_fragment>', `#include <opaque_fragment>
         if (vUW.y < uWaterY) {
           float dY = uWaterY - vUW.y;
           float camH = max(cameraPosition.y - uWaterY, 0.05);
           float viewLen = dY / max(camH + dY, 0.01) * length(cameraPosition - vUW);
-          float L = min(viewLen, dY * 5.0) + dY * 0.8;
+          float L = min(viewLen, dY * 3.5) + dY * 0.9;
           ${caustics ? `
           float ca = causticPattern(vUW.xz * 0.9 + vec2(0.0, uTime * 0.02), uTime * 0.5);
           ca += 0.6 * causticPattern(vUW.xz * 1.7 + 3.1, uTime * 0.41);
-          gl_FragColor.rgb *= 1.0 + ca * 1.3 * exp(-dY * 0.6) * smoothstep(0.0, 0.2, dY);` : ''}
+          gl_FragColor.rgb *= 1.0 + ca * 2.2 * exp(-dY * 0.5) * smoothstep(0.0, 0.12, dY);` : ''}
           vec3 trans = exp(-uAbsorb * L);
-          gl_FragColor.rgb = gl_FragColor.rgb * trans + uWaterScatter * (1.0 - exp(-0.55 * L));
+          gl_FragColor.rgb = gl_FragColor.rgb * trans + uWaterScatter * (1.0 - exp(-0.38 * L));
         }`);
   });
 }

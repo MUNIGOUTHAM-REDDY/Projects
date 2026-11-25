@@ -34,13 +34,13 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 setAnisotropy(Math.min(8, renderer.capabilities.getMaxAnisotropy()));
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(FOG_COLOR, Number(params.get("fog") || 0.0048));
+scene.fog = new THREE.FogExp2(FOG_COLOR, Number(params.get("fog") || 0.0105));
 
 const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 500);
 
 // --- Light ----------------------------------------------------------------
-const SUN_COLOR = new THREE.Color(1.0, 0.93, 0.8);
-const sun = new THREE.DirectionalLight(SUN_COLOR, Number(params.get('sun') || 8.5));
+const SUN_COLOR = new THREE.Color(1.0, 0.89, 0.72);
+const sun = new THREE.DirectionalLight(SUN_COLOR, Number(params.get('sun') || 9.5));
 const sunTarget = new THREE.Object3D();
 sunTarget.position.set(-0.5, 0, -1.5);
 G.uShadowCentre.value.copy(sunTarget.position);
@@ -92,7 +92,7 @@ const PRESETS = {
   edge: { label: "Water's edge", pos: [0.25, 0.5, 1.5], target: [1.6, 0.35, -9.0], fov: 52, focus: 7 },
   farbank: { label: 'Far bank', pos: [-7.6, 1.3, -6.6], target: [-0.2, 1.5, 3.6], fov: 56, focus: 11 },
   canopy: { label: 'Canopy', pos: [-1.4, 1.2, 6.2], target: [-3.2, 8.5, 2.6], fov: 68, focus: 7 },
-  above: { label: 'Above', pos: [-5.5, 10.5, 0.5], target: [1.6, 0, -7.5], fov: 52, focus: 14 },
+  above: { label: 'Above', pos: [-6.4, 11.5, -1.6], target: [1.8, 0, -8.5], fov: 52, focus: 15 },
 };
 
 const controls = new OrbitControls(camera, canvas);
@@ -185,7 +185,7 @@ Promise.all(modelJobs).then(() => { modelsDone = true; start(); });
 document.querySelectorAll('[data-preset]').forEach((b) => b.addEventListener('click', () => setPreset(b.dataset.preset)));
 const toggles = {
   wind: (on) => (G.uWind.value = on ? 1 : 0),
-  rays: (on) => { pipeline.scenePass.volumetrics = on; motes.visible = on; },
+  rays: (on) => { pipeline.scenePass.volumetrics = on; pipeline.scenePass.compMat.uniforms.uMist.value = on ? 1 : 0.4; motes.visible = on; },
   drift: (on) => { controls.autoRotate = on; controls.autoRotateSpeed = 0.3; },
 };
 document.querySelectorAll('[data-toggle]').forEach((b) => {

@@ -85,16 +85,16 @@ const WaterShader = {
       vec2 q = vSD;
 
       // long glassy swells, finer chop where the water runs fast and shallow, a breath of wind
-      vec3 n1 = flowNormal(q, fl, vec2(0.42, 0.13), 3.0, 0.0);
-      vec3 n2 = flowNormal(q, fl, vec2(1.5, 0.5), 1.9, 0.3);
-      vec3 n4 = flowNormal(q, fl, vec2(4.2, 1.7), 1.1, 0.6);
+      vec3 n1 = flowNormal(q, fl, vec2(0.5, 0.085), 3.0, 0.0);
+      vec3 n2 = flowNormal(q, fl, vec2(1.9, 0.3), 1.9, 0.3);
+      vec3 n4 = flowNormal(q, fl, vec2(5.5, 0.85), 1.1, 0.6);
       vec3 n3 = texture2D(tWaterN, p * 0.19 + uTime * vec2(0.013, 0.009)).xyz * 2.0 - 1.0;
-      float fast = smoothstep(0.2, 1.3, speed);
-      float chop = 0.2 + 0.55 * fast + 0.6 * clamp(foamK, 0.0, 1.0);
+      float fast = smoothstep(0.15, 1.15, speed);
+      float chop = 0.2 + 0.85 * fast + 0.7 * clamp(foamK, 0.0, 1.0);
       chop *= smoothstep(0.0, 0.08, depth) * 0.75 + 0.25;
-      vec2 nq = (n1.xy * 1.0 + n2.xy * (0.45 + 0.5 * fast) + n4.xy * (0.1 + 0.5 * fast)) * chop;
-      nq.y *= 0.5;                                          // crests run with the flow: gentler slope along it
-      vec2 nxy = Nl * nq.x + T * nq.y + n3.xy * 0.04;
+      vec2 nq = (n1.xy * 1.0 + n2.xy * (0.4 + 0.6 * fast) + n4.xy * (0.08 + 0.6 * fast)) * chop;
+      nq.y *= 0.3;                                          // crests run with the flow: long streaks, hardly any slope along it
+      vec2 nxy = Nl * nq.x + T * nq.y + n3.xy * 0.03;
       nxy *= 1.0 / (1.0 + dist * 0.03);                    // tame sparkle aliasing far away
       vec3 n = normalize(vec3(nxy.x, 1.0, nxy.y));
 
@@ -119,15 +119,21 @@ const WaterShader = {
       col += uSunColor * spec * vis * (0.04 + 0.96 * F) * 2.5;
 
       // foam: lacy cells that drift with the flow, densest right against the rocks
-      vec3 ft = flowTex(tFoam, q, fl, vec2(0.7, 0.3), 2.2);
-      vec3 ft2 = flowTex(tFoam, q + 3.7, fl, vec2(2.0, 0.9), 1.4);
+      vec3 ft = flowTex(tFoam, q, fl, vec2(1.1, 0.2), 2.2);
+      vec3 ft2 = flowTex(tFoam, q + 3.7, fl, vec2(3.0, 0.5), 1.4);
+      // drifting bubble lines: long threads of foam carried down the fastest water
+      vec3 ft3 = flowTex(tFoam, q + 1.3, fl, vec2(2.2, 0.12), 2.6);
+      float threads = smoothstep(0.7, 0.9, ft3.b * 0.6 + ft3.r * 0.55) * (smoothstep(0.45, 1.0, fast) * 0.5 + 0.7 * clamp(foamK, 0.0, 1.0)) * ft2.g;
       float lace = ft.r * 0.75 + ft2.r * 0.5 + ft2.g * 0.3;
-      float foam = smoothstep(1.0 - clamp(foamK, 0.0, 1.2) * 0.9, 1.22 - clamp(foamK, 0.0, 1.2) * 0.62, lace + foamK * 0.5);
+      float fk = clamp(foamK, 0.0, 1.2);
+      // never a solid sheet: even the heaviest white water stays broken into lace and streaks
+      float th = max(0.46, 1.1 - fk * 0.7);
+      float foam = smoothstep(th, th + 0.3, lace + fk * 0.12) * (0.55 + 0.45 * ft2.g) * smoothstep(0.02, 0.3, fk);
       // a thin lapping edge along the shore
       float shore = smoothstep(0.055, 0.0, depth) * smoothstep(-0.03, 0.0, depth) * (0.35 + 0.65 * ft2.g) * 0.5;
-      foam = clamp(foam * smoothstep(0.0, 0.03, depth) + shore, 0.0, 1.0);
+      foam = clamp((foam + threads * 0.6) * smoothstep(0.0, 0.03, depth) + shore, 0.0, 1.0);
       vec3 foamCol = vec3(0.86, 0.9, 0.86) * (uSunColor * vis * 0.75 + vec3(0.2, 0.26, 0.2));
-      col = mix(col, foamCol, foam * 0.85);
+      col = mix(col, foamCol, foam * 0.8);
 
       float alpha = smoothstep(-0.015, 0.03, depth);
       gl_FragColor = vec4(col, alpha);

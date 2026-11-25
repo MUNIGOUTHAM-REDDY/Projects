@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js';
-import { heightAt, rng, river, bankE, pathDist, ROCKS, fbm } from './world.js';
+import { heightAt, rng, river, bankE, pathDist, ROCKS, fbm, smoothstep } from './world.js';
 import { tex, A } from './textures.js';
 import { chain, underwater, dapple, G } from './shaders.js';
 import { loadModel } from './models.js';
@@ -60,7 +60,7 @@ function rockMaterial(set) {
   const o = { repeat: false, flipY: false };
   const mat = new THREE.MeshStandardMaterial({
     map: tex(A(`${d}/diff.jpg`), o), normalMap: tex(A(`${d}/nor.jpg`), { ...o, srgb: false }), roughnessMap: tex(A(`${d}/rough.jpg`), { ...o, srgb: false }),
-    roughness: 1, metalness: 0, color: new THREE.Color(0.92, 0.92, 0.88), envMapIntensity: 0.8,
+    roughness: 1, metalness: 0, color: new THREE.Color(0.92, 0.92, 0.88), envMapIntensity: 0.6,
   });
   return bedded(mat, { moss: 0.75, key: set });
 }
@@ -82,7 +82,7 @@ function pebbleGeometry(seed) {
 
 function pebbleMaterial() {
   const t = tex(A('mossy_rock_diff.jpg'));
-  const mat = new THREE.MeshStandardMaterial({ roughness: 0.82, metalness: 0, envMapIntensity: 0.8 });
+  const mat = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, envMapIntensity: 0.6 });
   bedded(mat, { moss: 0.35, blend: 0.03, key: 'peb' });
   chain(mat, 'pebtri', (s) => {
     Object.assign(s.uniforms, { tPebble: { value: t } });
@@ -114,17 +114,19 @@ export function createRocks(quality) {
       let h = v.height * sc;
       const bed = heightAt(rk.x, rk.z);
       // boulders in the stream must break the surface
-      if (bed < 0 && h * (1 - rk.sink) < -bed + 0.22) { const k = Math.min(1.7, (-bed + 0.22) / (h * (1 - rk.sink))); sc *= k; h *= k; }
+      if (!rk.sub && bed < 0 && h * (1 - rk.sink) < -bed + 0.22) { const k = Math.min(1.7, (-bed + 0.22) / (h * (1 - rk.sink))); sc *= k; h *= k; }
       m.scale.setScalar(sc);
       m.rotation.set((r() - 0.5) * 0.25, rk.rot, (r() - 0.5) * 0.25);
-      m.position.set(rk.x, bed - h * rk.sink, rk.z);
+      // sunken boulders: tops a hand's breadth under the surface, showing as dark shapes with a boil above
+      const yBase = rk.sub ? Math.max(bed - h * 0.6, Math.min(bed - h * rk.sink, -(0.04 + r() * 0.12) - h)) : bed - h * rk.sink;
+      m.position.set(rk.x, yBase, rk.z);
       m.castShadow = true; m.receiveShadow = true;
       group.add(m);
     });
   });
 
   // Cobbles and pebbles: thick along the waterline and on the gravel bars, scattered over the riffles.
-  const count = quality === 'low' ? 1400 : 3600;
+  const count = quality === 'low' ? 1800 : 5200;
   const geos = [pebbleGeometry(1.3), pebbleGeometry(5.7), pebbleGeometry(9.1)];
   const mat = pebbleMaterial();
   const per = geos.map(() => []);
@@ -135,13 +137,15 @@ export function createRocks(quality) {
     const x = -1 + Math.cos(ang) * rad, z = -4 + Math.sin(ang) * rad;
     const y = heightAt(x, z);
     if (y > 0.3 || y < -0.5) continue;
-    const edge = Math.exp(-(((y - 0.03) / 0.1) ** 2));
-    if (r() > 0.12 + 0.88 * edge) continue;
+    const edge = Math.exp(-(((y - 0.02) / 0.13) ** 2));
+    // gravel comes in bars and pockets, not as a strip: bare mud and moss reach the water in between
+    const pocket = smoothstep(-0.05, 0.25, fbm(x * 0.33, z * 0.33, 2, 52)) * (0.4 + 0.6 * smoothstep(-0.1, 0.2, fbm(x * 1.4, z * 1.4, 2, 53)));
+    if (r() > (0.1 + 0.9 * edge) * (0.06 + 0.94 * pocket)) continue;
     if (pathDist(x, z) < 0.5 && r() < 0.8) continue;
     const big = r();
-    const size = 0.025 + Math.pow(big, 3.5) * 0.2 + r() * 0.03;
+    const size = 0.02 + Math.pow(big, 5) * 0.42 + Math.pow(r(), 2) * 0.06;
     e.set((r() - 0.5) * 0.5, r() * 6.283, (r() - 0.5) * 0.5); q.setFromEuler(e);
-    p.set(x, y - size * 0.22, z); s.set(size * (0.8 + r() * 0.5), size * (0.7 + r() * 0.5), size * (0.8 + r() * 0.5));
+    p.set(x, y - size * (0.2 + r() * 0.25), z); s.set(size * (0.8 + r() * 0.5), size * (0.7 + r() * 0.5), size * (0.8 + r() * 0.5));
     m4.compose(p, q, s);
     const v = 0.6 + r() * 0.55, w = r();
     per[n % 3].push({ m: m4.clone(), c: [v * (0.95 + w * 0.12), v * (0.93 + w * 0.06), v * (0.86 - w * 0.06)] });

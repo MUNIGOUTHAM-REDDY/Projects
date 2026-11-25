@@ -174,8 +174,22 @@ export function pathMask(x, z) {
 
 // Metres outside the (noisy) bank line; negative inside the channel.
 export function bankE(x, z, r = river(x, z)) {
-  const wob = 1.0 * fbm(x * 0.17, z * 0.17, 3, 4) + 0.3 * fbm(x * 0.8, z * 0.8, 2, 8);
+  // long swings in width, metre-scale coves and points, and a ragged edge
+  const cove = fbm(x * 0.45, z * 0.45, 2, 15);
+  const wob = 1.0 * fbm(x * 0.17, z * 0.17, 3, 4) + 0.75 * cove + 0.45 * Math.abs(cove) + 0.3 * fbm(x * 1.3, z * 1.3, 2, 8) - 0.5;
   return Math.abs(r.d) - r.w + wob * 1.7;
+}
+
+// Cobble ledges across the channel: the bed rises to a few centimetres of water and the stream breaks over them.
+export const LEDGES = [[1.0, -5.3, 0.82], [2.6, -10.6, 0.75], [3.2, -16.4, 0.8], [3.6, -27, 0.7], [-15.5, 0.5, 0.75], [-25, 2.6, 0.7]].map(([x, z, k]) => ({ s: river(x, z).s, k }));
+export function ledgeAt(s, x, z) {
+  let v = 0;
+  for (const l of LEDGES) {
+    const d = s - l.s + 0.9 * fbm(x * 0.5, z * 0.5, 2, 33);
+    const e = l.k * Math.exp(-(d / 0.85) * (d / 0.85));
+    if (e > v) v = e;
+  }
+  return v;
 }
 
 // 0 = gentle gravel bank, 1 = undercut bank. The outside of a bend is cut, the inside is a bar.
@@ -211,7 +225,7 @@ export function heightAt(x, z) {
     const prof = 0.5 + 0.5 * Math.pow(Math.max(0, 1 - p * p), 0.8);
     const edgeW = lerp(2.6, 0.7, cut);
     const f = smoothstep(0, edgeW, m);
-    const bed = r.D * prof * (1 + 0.5 * fbm(x * 0.28, z * 0.28, 3, 6)) + 0.06;
+    const bed = (r.D * prof * (1 + 0.5 * fbm(x * 0.28, z * 0.28, 3, 6)) + 0.06) * (1 - ledgeAt(r.s, x, z));
     h = 0.02 - bed * f - 0.05 * smoothstep(0, 0.5, m) * cut;
     h += 0.05 * fbm(x * 1.1, z * 1.1, 2, 7) * f;
   }
@@ -238,34 +252,44 @@ export const ROCKS = (() => {
     { x: 2.5, z: 2.0, r: 0.5, sink: 0.35, kind: 'b' }, { x: -0.3, z: 2.9, r: 0.42, sink: 0.4, kind: 'b' }, { x: 0.7, z: 2.0, r: 0.3, sink: 0.3, kind: 'r' },
     // pool margins
     { x: 3.2, z: -0.6, r: 0.6, sink: 0.3, kind: 'r' }, { x: -6.2, z: 2.1, r: 0.55, sink: 0.3, kind: 'r' }, { x: -4.6, z: -5.4, r: 0.62, sink: 0.3, kind: 'b' },
-    // head of the pool and the riffle: the current threads between these
-    { x: 0.2, z: -4.6, r: 0.62, sink: 0.2, kind: 'r' }, { x: 2.3, z: -5.2, r: 0.8, sink: 0.2, kind: 'r' }, { x: -1.2, z: -5.9, r: 0.45, sink: 0.2, kind: 'r' },
-    { x: 1.1, z: -6.9, r: 0.42, sink: 0.2, kind: 'r' }, { x: 3.6, z: -7.4, r: 0.55, sink: 0.2, kind: 'r' }, { x: -0.3, z: -8.3, r: 0.7, sink: 0.2, kind: 'r' },
-    { x: 2.2, z: -9.0, r: 0.5, sink: 0.2, kind: 'r' }, { x: 4.6, z: -9.9, r: 0.75, sink: 0.25, kind: 'r' }, { x: 0.9, z: -10.6, r: 0.38, sink: 0.2, kind: 'r' },
-    { x: 3.0, z: -11.4, r: 0.85, sink: 0.2, kind: 'r' }, { x: 1.4, z: -12.9, r: 0.55, sink: 0.2, kind: 'r' }, { x: 5.0, z: -12.6, r: 0.48, sink: 0.25, kind: 'r' },
-    { x: 3.4, z: -14.4, r: 0.62, sink: 0.2, kind: 'r' }, { x: 2.0, z: -16.2, r: 0.5, sink: 0.2, kind: 'r' }, { x: 5.4, z: -15.6, r: 0.75, sink: 0.4, kind: 'b' },
-    { x: -1.4, z: -11.6, r: 0.6, sink: 0.4, kind: 'b' }, { x: 5.6, z: -6.0, r: 0.55, sink: 0.4, kind: 'b' }, { x: -3.0, z: -7.6, r: 0.5, sink: 0.4, kind: 'b' },
-    { x: 3.9, z: -18.4, r: 0.6, sink: 0.25, kind: 'r' }, { x: 6.2, z: -21.5, r: 0.8, sink: 0.4, kind: 'b' },
     // downstream
     { x: -9.5, z: 3.6, r: 0.55, sink: 0.3, kind: 'r' }, { x: -13.5, z: -2.2, r: 0.7, sink: 0.3, kind: 'r' }, { x: -17.5, z: 1.6, r: 0.5, sink: 0.2, kind: 'r' },
     { x: -19.5, z: -0.4, r: 0.62, sink: 0.2, kind: 'r' }, { x: -21.5, z: 1.6, r: 0.45, sink: 0.2, kind: 'r' }, { x: -7.2, z: 7.4, r: 0.6, sink: 0.4, kind: 'b' },
   ];
-  // Seeded extras along the banks and in shallow water, away from the path.
   const r = rng(4242);
+  const free = (x, z, rad, pad = 1.08) => !list.some((o) => Math.hypot(o.x - x, o.z - z) < (o.r + rad) * pad);
+  // Boulders gather where the bed is shallow: tight groups on and just below each ledge, strung along the
+  // current rather than across a grid, in every size, many with their tops just under the surface.
+  const groups = [[1.0, -5.3, 8], [-0.6, -6.6, 4], [2.9, -7.6, 5], [2.6, -10.6, 9], [0.9, -12.2, 5], [4.3, -13.2, 5], [3.2, -16.4, 8], [2.2, -19, 4], [3.6, -27, 7], [-15.5, 0.5, 7], [-20, 0.2, 5], [-9.8, 1.4, 3], [0.4, -2.6, 3]];
+  for (const [gx, gz, n] of groups) {
+    const rv = river(gx, gz), tx = rv.tx, tz = rv.tz;
+    let made = 0, tries = 0;
+    while (made < n && tries++ < 200) {
+      const along = (r() + r() - 1) * 1.9, across = (r() + r() + r() - 1.5) * 3.2;
+      const x = gx + tx * along - tz * across, z = gz + tz * along + tx * across;
+      const rad = 0.16 + Math.pow(r(), 2.6) * 0.85;
+      const dep = depthAt(x, z);
+      if (dep < 0.02 || dep > 0.75 || !free(x, z, rad)) continue;
+      list.push({ x, z, r: rad, sink: 0.15 + r() * 0.2, kind: 'r', sub: r() < 0.38 });
+      made++;
+    }
+  }
+  // Seeded extras along the banks and in shallow water, away from the path.
   let tries = 0;
-  while (list.length < 78 && tries++ < 4000) {
+  const cap = list.length + 34;
+  while (list.length < cap && tries++ < 4000) {
     const i = Math.floor(r() * RIV.n * 0.5 + RIV.n * 0.22);
     const side = r() < 0.5 ? -1 : 1;
-    const off = RIV.ws[i] * (0.35 + r() * 1.1) * side;
+    const off = RIV.ws[i] * (0.55 + r() * 0.9) * side;
     const x = RIV.xs[i] - RIV.tz[i] * off + (r() - 0.5), z = RIV.zs[i] + RIV.tx[i] * off + (r() - 0.5);
     if (Math.hypot(x, z) > 46) continue;
     if (pathDist(x, z) < 1.4) continue;
     if (Math.hypot(x - HERO_TREES.left.x, z - HERO_TREES.left.z) < 1.6 || Math.hypot(x - HERO_TREES.right.x, z - HERO_TREES.right.z) < 1.6) continue;
-    const rad = 0.22 + Math.pow(r(), 2.2) * 0.75;
-    if (list.some((o) => Math.hypot(o.x - x, o.z - z) < (o.r + rad) * 1.15)) continue;
+    const rad = 0.2 + Math.pow(r(), 2.4) * 0.9;
+    if (!free(x, z, rad, 1.15)) continue;
     const dep = depthAt(x, z);
     if (dep > 0.45) continue;
-    list.push({ x, z, r: rad, sink: dep > 0.02 ? 0.2 : 0.36 + r() * 0.16, kind: dep > 0.02 ? 'r' : 'b' });
+    list.push({ x, z, r: rad, sink: dep > 0.02 ? 0.2 : 0.36 + r() * 0.16, kind: dep > 0.02 ? 'r' : 'b', sub: dep > 0.15 && r() < 0.3 });
   }
   list.forEach((o, i) => { o.rot = (i * 2.399963) % (Math.PI * 2); o.variant = i; });
   return list;

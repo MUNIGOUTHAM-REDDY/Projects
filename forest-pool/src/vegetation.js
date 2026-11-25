@@ -17,7 +17,7 @@ function instanced(variants, lists, materials, { cast = true } = {}) {
     const inst = new THREE.InstancedMesh(v.geo, materials.mat, list.length);
     const c = new THREE.Color();
     list.forEach((o, k) => {
-      e.set(o.tx || 0, o.rot, o.tz || 0); q.setFromEuler(e);
+      if (o.q) q.copy(o.q); else { e.set(o.tx || 0, o.rot, o.tz || 0); q.setFromEuler(e); }
       p.set(o.x, o.y, o.z); s.set(o.s, o.s * (o.sy || 1), o.s);
       inst.setMatrixAt(k, m4.compose(p, q, s));
       inst.setColorAt(k, c.setRGB(o.c[0], o.c[1], o.c[2]));
@@ -95,6 +95,30 @@ export function createGroundCover(quality) {
     const v = 0.75 + r() * 0.4, dry = r();
     grass.push({ x, z, y: heightAt(x, z) - 0.015, s: 0.8 + r() * 0.8 + smoothstep(1.5, 0.1, e2) * 0.35, sy: 0.8 + r() * 0.5, rot: r() * 6.283, tx: (r() - 0.5) * 0.2, tz: (r() - 0.5) * 0.2, c: [v * (0.85 + dry * 0.25), v * 0.95, v * (0.6 + r() * 0.25)] });
   }
+  // Bank-edge sedge and grass: rooted on the lip of the bank and bowing out over the water, breaking the shoreline.
+  const edgeTarget = hi ? 1500 : 500;
+  const yaw = new THREE.Quaternion(), tilt = new THREE.Quaternion(), axis = new THREE.Vector3();
+  tries = 0; let nEdge = 0;
+  while (nEdge < edgeTarget && tries++ < edgeTarget * 40) {
+    const a = r() * 6.283, d = Math.pow(r(), 0.8) * 30;
+    const x = -1 + Math.cos(a) * d, z = -3 + Math.sin(a) * d;
+    const rv = river(x, z);
+    const sgn = Math.sign(rv.d), nx = -rv.tz * sgn, nz = rv.tx * sgn;   // pointing away from the channel
+    const e2 = bankE(x, z, rv);
+    if (e2 < -0.12 || e2 > 0.45) continue;
+    if (pathDist(x, z) < 0.9 || nearRock(x, z, -0.15)) continue;
+    if (fbm(x * 0.35, z * 0.35, 2, 81) < -0.12) continue;                // in runs, with bare gravel between
+    const y = heightAt(x, z);
+    if (y < -0.06) continue;
+    const lean = 0.25 + r() * 0.55;
+    axis.set(-nz, 0, nx);                                                 // tilt about the bank line, toward the water
+    tilt.setFromAxisAngle(axis.normalize(), -lean);
+    yaw.setFromAxisAngle(axis.set(0, 1, 0), r() * 6.283);
+    const v = 0.7 + r() * 0.4, dry = r();
+    grass.push({ x, z, y: y - 0.03, s: 1.3 + r() * 1.5, sy: 0.9 + r() * 0.7, rot: 0, q: tilt.clone().multiply(yaw), c: [v * (0.8 + dry * 0.3), v * 0.95, v * (0.55 + r() * 0.25)], tall: true });
+    nEdge++;
+  }
+
   const fuzz = [];
   const fuzzTarget = hi ? 9000 : 2500;
   tries = 0;
@@ -112,7 +136,8 @@ export function createGroundCover(quality) {
     const lists = use.map(() => []);
     grass.forEach((g, i) => {
       let k = Math.floor(r() * use.length);
-      if (/tiny/.test(use[k].name) && r() < 0.6) k = Math.floor(r() * use.length);
+      if (/tiny/.test(use[k].name) && (g.tall || r() < 0.6)) k = Math.floor(r() * use.length);
+      if (g.tall) { const tl = use.map((v, i) => (/tall/.test(v.name) ? i : -1)).filter((i) => i >= 0); k = tl[Math.floor(r() * tl.length)]; }
       lists[k].push({ ...g, s: g.s * (/tiny/.test(use[k].name) ? 1.6 : 1) });
     });
     // a fuzz of tiny tufts so mossy ground is never a bare painted plane
@@ -168,32 +193,41 @@ export function createGroundCover(quality) {
     group.add(...meshes);
   });
 
-  // --- Leaf litter: thousands of individual fallen leaves, copper-brown through ochre ----
+  // --- Leaf litter: small, weathered beech leaves. They drift into the hollows and along the edges of the
+  // trail, lie curled, crumpled or half trodden in, and a few have sunk onto the stream bed by the banks.
   const litter = new Instances();
-  const litterTarget = hi ? 22000 : 7000;
+  const litterTarget = hi ? 38000 : 11000;
   const nrm = new THREE.Vector3(), dir = new THREE.Vector3(), side = new THREE.Vector3(), X = new THREE.Vector3(), Z = new THREE.Vector3();
   let n = 0; tries = 0;
-  while (n < litterTarget && tries++ < litterTarget * 12) {
-    const a = r() * 6.283, d = Math.pow(r(), 0.8) * 24;
-    const x = Math.cos(a) * d, z = 3 + Math.sin(a) * d;
+  while (n < litterTarget && tries++ < litterTarget * 14) {
+    const a = r() * 6.283, d = Math.pow(r(), 0.8) * 26;
+    const x = Math.cos(a) * d, z = 2 + Math.sin(a) * d;
     const y = heightAt(x, z);
-    if (y < 0.03) continue;
-    const drift = 0.4 + 1.5 * fbm(x * 0.22 + 9, z * 0.22, 3, 13) + 0.3 * pathMask(x, z);
+    const sunk = y < 0.02;
+    if (sunk && (y < -0.5 || r() < 0.55)) continue;
+    const pd = pathDist(x, z);
+    const hollow = -fbm(x * 0.9, z * 0.9, 2, 5);                       // matches the terrain's small relief
+    let drift = 0.1 + 2.6 * Math.max(0, fbm(x * 0.3 + 9, z * 0.3, 3, 13)) + 1.8 * Math.max(0, hollow) + 0.25 * fbm(x * 2.1, z * 2.1, 2, 19);
+    if (z > 2.5) drift += 0.75 * Math.exp(-(((pd - 0.75) / 0.3) ** 2)) - 0.5 * smoothstep(0.55, 0.2, pd);   // swept to the path's edges
     if (r() > drift) continue;
     if (nearRock(x, z, -0.25)) continue;
     const gx = (heightAt(x + 0.08, z) - y) / 0.08, gz = (heightAt(x, z + 0.08) - y) / 0.08;
-    nrm.set(-gx + (r() - 0.5) * 0.5, 1, -gz + (r() - 0.5) * 0.5).normalize();
-    if (r() < 0.25) nrm.multiplyScalar(-1);                       // some lie face-down, pale side up
+    const mode = r();                                                   // flat / curled / crumpled / half-buried
+    const wild = mode < 0.55 ? 0.35 : mode < 0.8 ? 0.9 : mode < 0.92 ? 1.8 : 1.2;
+    nrm.set(-gx + (r() - 0.5) * wild, 1, -gz + (r() - 0.5) * wild).normalize();
+    if (r() < 0.3) nrm.multiplyScalar(-1);                             // some lie face-down, pale side up
     const ra = r() * 6.283;
     dir.set(Math.cos(ra), 0, Math.sin(ra));
     dir.addScaledVector(nrm, -dir.dot(nrm)).normalize();
     side.crossVectors(dir, nrm);
-    const sc = 0.062 + r() * 0.04;
-    p.set(x, y + 0.006 + r() * 0.012, z);
-    m4.makeBasis(X.copy(side).multiplyScalar(sc), dir.multiplyScalar(sc), Z.copy(nrm).multiplyScalar(sc * (0.5 + r() * 2.2))).setPosition(p);
-    const t = r(), v = 0.55 + r() * 0.6;
-    // tint multiplies the green leaf texture: push it to copper, tan and yellow
-    const c = t < 0.45 ? [0.27, 0.105, 0.04] : t < 0.75 ? [0.2, 0.1, 0.05] : t < 0.92 ? [0.4, 0.25, 0.09] : t < 0.97 ? [0.5, 0.38, 0.08] : [0.2, 0.3, 0.07];
+    const sc = 0.026 + Math.pow(r(), 1.7) * 0.042;
+    const curl = mode < 0.55 ? 0.3 + r() * 0.8 : mode < 0.8 ? 1.5 + r() * 2 : 2.5 + r() * 3;
+    const buried = mode >= 0.92;
+    p.set(x, y + (buried ? -0.012 : 0.004 + r() * 0.01) + (mode >= 0.8 && !buried ? sc * 0.25 : 0), z);
+    m4.makeBasis(X.copy(side).multiplyScalar(sc * (mode >= 0.8 ? 0.55 + r() * 0.35 : 0.85 + r() * 0.3)), dir.multiplyScalar(sc), Z.copy(nrm).multiplyScalar(sc * curl)).setPosition(p);
+    const t = r(), v = (0.5 + r() * 0.6) * (sunk ? 0.75 : 1);
+    // weathered browns and greys, the odd paler or still-green leaf
+    const c = t < 0.4 ? [0.2, 0.125, 0.07] : t < 0.7 ? [0.15, 0.1, 0.065] : t < 0.88 ? [0.27, 0.2, 0.12] : t < 0.96 ? [0.34, 0.27, 0.13] : [0.17, 0.24, 0.07];
     litter.add(m4, c[0] * v, c[1] * v, c[2] * v, 0, 0, Math.floor(r() * 4));
     n++;
   }

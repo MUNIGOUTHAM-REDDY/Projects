@@ -7,7 +7,7 @@ import { sampleBake } from './bake.js';
 import { litterMaterials, leafGeometry } from './foliage.js';
 
 export function createFallingLeaves(quality) {
-  const N = quality === 'low' ? 30 : 64;
+  const N = quality === 'low' ? 50 : 130;
   const SCALE = Number(new URLSearchParams(location.search).get('leafscale') || 1);
   const g = leafGeometry().clone();
   g.setAttribute('aVar', new THREE.InstancedBufferAttribute(new Float32Array(N).map((_, i) => i % 4), 1));
@@ -19,17 +19,20 @@ export function createFallingLeaves(quality) {
   const tints = [[0.6, 0.44, 0.07], [0.42, 0.24, 0.07], [0.5, 0.5, 0.1], [0.4, 0.15, 0.05], [0.3, 0.42, 0.08]];
   const spawn = (o, fresh) => {
     // drop zones: under the two hero crowns and along the river corridor in front of the trail
+    // the river corridor and, more thickly, the places people stand and look
     const k = r();
-    if (k < 0.3) { o.x = -3 + (r() - 0.5) * 9; o.z = 3.5 + (r() - 0.5) * 7; }
-    else if (k < 0.55) { o.x = 3.5 + (r() - 0.5) * 7; o.z = 1 + (r() - 0.5) * 7; }
-    else { o.x = 0.5 + (r() - 0.5) * 11; o.z = -5 + (r() - 0.5) * 16; }
+    if (k < 0.24) { o.x = 0.1 + (r() - 0.5) * 5; o.z = 5.2 + (r() - 0.5) * 5; }            // over the trail
+    else if (k < 0.46) { o.x = 0.8 + (r() - 0.5) * 6; o.z = -1.5 + (r() - 0.5) * 6; }      // over the pool by the landing
+    else if (k < 0.62) { o.x = -2.6 + (r() - 0.5) * 5; o.z = 4.6 + (r() - 0.5) * 5; }      // under the old tree
+    else if (k < 0.76) { o.x = -3 + (r() - 0.5) * 9; o.z = -1 + (r() - 0.5) * 8; }
+    else { o.x = 1.5 + (r() - 0.5) * 10; o.z = -8 + (r() - 0.5) * 14; }
     o.y = fresh ? 6 + r() * 7 : 1 + r() * 11;
     o.mode = 0; o.age = 0; o.rest = 0; o.fade = fresh ? 0 : 1;
     o.tumble = r() < 0.3;
     o.w = 2.2 + r() * 1.6;            // rocking frequency
     o.amp = 0.35 + r() * 0.5;         // rocking amplitude (rad)
     o.ph = r() * 6.283; o.head = r() * 6.283; o.spin = (r() - 0.5) * 1.2;
-    o.size = 0.095 + r() * 0.035;
+    o.size = 0.1 + r() * 0.04;
     o.vy = 0;
     o.q = o.q || new THREE.Quaternion();
   };

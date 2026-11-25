@@ -6,7 +6,7 @@
 // and the wind hierarchy (branch sway from the instance's sway weight + leaf flutter).
 import * as THREE from 'three';
 import { tex, A } from './textures.js';
-import { chain, wind, worldPos, dapple, G } from './shaders.js';
+import { chain, wind, worldPos, dapple, underwater, G } from './shaders.js';
 
 // Mirrors tools/make_leaves.py
 const LEAF_V0 = 0.07, LEAF_V1 = 0.95;
@@ -103,7 +103,7 @@ function foliageShading(mat, { card, dry = false }) {
           vec3 base = diffuseColor.rgb;
           vec3 under = mix(base, vec3(dot(base, vec3(0.3, 0.6, 0.1))) * vec3(0.9, 1.0, 0.72), 0.35) * 1.12;
           if (!gl_FrontFacing) diffuseColor.rgb = under;
-          vec3 trans = base * vec3(1.0, 1.32, 0.4) + vec3(0.008, 0.028, 0.0);
+          vec3 trans = base * vec3(1.08, 1.5, 0.42) + vec3(0.008, 0.03, 0.0);
           ${dry ? 'trans = base * vec3(1.3, 1.0, 0.6); if (!gl_FrontFacing) diffuseColor.rgb = base * 1.25;' : ''}
           diffuseColor.rgb = mix(diffuseColor.rgb, trans, fBack);
           normal = mix(normal, -normal, step(nl, 0.0));
@@ -232,6 +232,7 @@ export function litterMaterials() {
   const map = tex(A('leaf_atlas.webp'), { repeat: false });
   const nrm = tex(A('leaf_atlas_n.jpg'), { srgb: false, repeat: false });
   const mat = new THREE.MeshStandardMaterial({ map, normalMap: nrm, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.7, metalness: 0, envMapIntensity: 0.7 });
+  underwater(mat, { wet: false });
   atlasPatch(mat, 4, 1, 'm');
   // dead leaves: keep the veins and blotches, lose the chlorophyll; the instance colour supplies the hue
   chain(mat, 'dry', (s) => {
