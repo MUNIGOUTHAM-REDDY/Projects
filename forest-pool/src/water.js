@@ -3,7 +3,7 @@
 // foam around boulders and over the riffles, and sun glints that respect the canopy's shadow.
 import * as THREE from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
-import { RIVER_SAMPLES, WATER_Y } from './world.js';
+import { RIVER_SAMPLES, WATER_Y, LEDGES } from './world.js';
 import { G, NOISE_GLSL, GOBO_GLSL } from './shaders.js';
 import { tex, A } from './textures.js';
 
@@ -19,6 +19,7 @@ const WaterShader = {
     varying vec3 vW;
     varying vec2 vSD; varying vec2 vT;
     uniform sampler2D tBake; uniform vec4 uBake; uniform float uTime;
+    uniform float uLedges[6];
     void main() {
       vSD = aSD; vT = aT;
       vUv = textureMatrix * vec4(position, 1.0);
@@ -28,12 +29,14 @@ const WaterShader = {
       vec4 bk = texture2D(tBake, (w0.xz - uBake.xy) * uBake.z);
       float k = clamp(bk.a, 0.0, 1.0) * smoothstep(0.3, 1.0, length(bk.gb)) * smoothstep(0.04, 0.22, -bk.r);
       pos.z += k * (0.075 * sin(aSD.y * 3.6 + sin(aSD.x * 2.3) * 1.5) + 0.025 * sin(aSD.x * 5.1 + aSD.y * 1.7 + uTime * 0.6) + 0.02);
+      // water backs up a few centimetres behind each cobble ledge and drops over it
+      for (int i = 0; i < 6; i++) { float ds = aSD.y - uLedges[i]; pos.z += 0.05 * smoothstep(-7.0, -0.6, ds) * (1.0 - smoothstep(-0.3, 0.8, ds)) * smoothstep(0.02, 0.15, -bk.r); }
       vW = (modelMatrix * vec4(pos, 1.0)).xyz;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
     }`,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse, tRefr, tBake, tWaterN, tFoam, uShadowMap;
-    // (tBake / uBake / uTime are shared with the vertex stage)
+    uniform float uLedges[6];
     uniform mat4 uShadowMatrix;
     uniform vec4 uBake;
     uniform vec2 uRes;
@@ -147,6 +150,8 @@ const WaterShader = {
       // white caps break on the crests of the standing waves
       float crest = sin(q.y * 3.6 + sin(q.x * 2.3) * 1.5);
       foam += smoothstep(0.45, 0.95, crest) * clamp(foamK, 0.0, 1.0) * smoothstep(0.3, 1.0, speed) * (0.35 + 0.65 * ft2.r) * 0.9;
+      // a broken white tongue where the water spills off each ledge
+      for (int i = 0; i < 6; i++) { float ds = q.y - uLedges[i] + 0.5 * (ft.b - 0.5); foam += exp(-(ds - 0.9) * (ds - 0.9) / 0.5) * smoothstep(0.5, 0.95, ft.r * 0.6 + ft2.r * 0.55 + ft2.g * 0.25) * 0.85; }
       foam *= smoothstep(0.03, 0.16, depth);               // no foam film over bare gravel
       // a thin lapping edge along the shore
       float shore = smoothstep(0.06, 0.015, depth) * smoothstep(0.0, 0.015, depth) * ft2.g * ft.r * 0.6;
@@ -199,7 +204,7 @@ export function createWater(quality, sun) {
   m.transparent = true;
   m.depthWrite = false;
   Object.assign(m.uniforms, {
-    tRefr: { value: null }, tBake: G.tBake, uBake: G.uBake, uRes: { value: new THREE.Vector2(1, 1) },
+    uLedges: { value: LEDGES.map((l) => l.s) }, tRefr: { value: null }, tBake: G.tBake, uBake: G.uBake, uRes: { value: new THREE.Vector2(1, 1) },
     tWaterN: { value: tex(A('water_n.jpg'), { srgb: false }) }, tFoam: { value: tex(A('foam.jpg'), { srgb: false }) },
     uTime: G.uTime, uSunDir: G.uSunDir, uSunColor: { value: new THREE.Color(1, 0.95, 0.85).multiplyScalar(4) },
     uShadowMap: { value: null }, uShadowMatrix: { value: sun.shadow.matrix }, uShadowOn: { value: 0 },

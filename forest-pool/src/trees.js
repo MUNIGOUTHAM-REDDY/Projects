@@ -10,6 +10,16 @@ import { heightAt, river, bankE, pathDist, rng, fbm, clamp, lerp, smoothstep, HE
 import { tex, pbr, A } from './textures.js';
 import { chain, wind, underwater, dapple, worldPos, G } from './shaders.js';
 import { leafGeometry, cardGeometry, leafMaterials, cardMaterials, Instances } from './foliage.js';
+import { LAYOUT } from './layout.js';
+
+// Hand edits to the locked layout: { at: [x, z], remove | to: [x, z] | type }.
+const EDITS = [
+  { at: [-3.25, -12.08], remove: true },          // spindly shrub in front of the far-bank viewpoint
+  { at: [10.94, -11.23], remove: true },          // sapling hiding the snag
+  { at: [-8.47, -12.52], to: [-11.4, -15.6] },    // heavy trunk at the left edge of the water's-edge view
+];
+// Dead standing trunks placed where the main views see them.
+const SNAGS = [];
 
 const perlin = new ImprovedNoise();
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -446,7 +456,7 @@ function crown(axis, r, out, { t0, nL, lenBase, far, mid, tint, tintV, H }) {
 
 // Forest trees come in several characters: tall clean-boled beeches, heavy old trees that fork into
 // co-dominant leaders, slender leaning poles with low crowns, and the occasional dead snag.
-function forestTree(x, z, r, out, kind, force = null) {
+function forestTree(x, z, r, out, kind, force = null, special = false) {
   const y0 = heightAt(x, z);
   const far = kind === 'far', mid = kind === 'mid';
   const k = r();
@@ -454,11 +464,11 @@ function forestTree(x, z, r, out, kind, force = null) {
   let H = 21 + r() * 9, R = 0.15 + Math.pow(r(), 3) * 0.42;        // many slim stems, few stout ones
   if (type === 'old') { H = 25 + r() * 8; R = 0.4 + r() * r() * 0.22; }
   if (type === 'young') { H = 10 + r() * 7; R = 0.07 + H * 0.006 + r() * 0.03; }
-  if (type === 'snag') { H = force ? 11 + r() * 3 : 7 + r() * 9; R = force ? 0.3 : 0.2 + r() * 0.2; }
+  if (type === 'snag') { H = special ? 12 + r() * 3 : 7 + r() * 9; R = special ? 0.3 : 0.2 + r() * 0.2; }
   // Trees on the bank lean out over the water toward the light; everything else leans a few degrees its own way.
   const rv = river(x, z);
   const e = Math.abs(rv.d) - rv.w;
-  const toward = -Math.sign(rv.d) * smoothstep(9, 1.5, e) * (0.05 + r() * 0.13) * (force ? 0.25 : 1);
+  const toward = -Math.sign(rv.d) * smoothstep(9, 1.5, e) * (0.05 + r() * 0.13) * (special && type !== 'snag' ? 0.25 : 1);
   const la = r() * 6.283, lm = (type === 'young' ? 0.06 + r() * 0.16 : 0.02 + r() * 0.1) * (far ? 1.7 : 1);
   const lx = -rv.tz * toward + Math.cos(la) * lm, lz = rv.tx * toward + Math.sin(la) * lm;
   const ctrl = [];
@@ -476,7 +486,7 @@ function forestTree(x, z, r, out, kind, force = null) {
   trunk.radiusAt = (t) => (snag ? R * (1 - 0.3 * t) * (1 - 0.8 * smoothstep(0.9, 1.0, t)) : R * (1 - 0.84 * Math.pow(t, 1.25)));
   trunk.swayAt = (t) => (snag ? 0 : (type === 'young' ? 1.4 : 1.0) * Math.pow(Math.max(0, t - 0.1), 2.3));
   // every trunk its own shade of grey: some weathered pale, some dark and wet-looking, a few green with algae
-  const bv = snag ? 1.0 : 0.72 + r() * 0.4, bh = r();
+  const bv = snag ? (special ? 1.7 : 1.0) : 0.72 + r() * 0.4, bh = r();
   const tintV = [bv * (0.96 + bh * 0.08), bv * (0.98 + (1 - bh) * 0.06), bv * (0.9 + bh * 0.1)];
   (snag ? out.snags : out.geos).push(tube(trunk, { radial: far ? 7 : type === 'young' ? 9 : 14, flare: far ? 0 : type === 'old' ? 1.6 : 1.15, flareLobes: 4 + Math.floor(r() * 3), flareH: 0.45 + R * 0.9, seed: r() * 10, lumps: far ? 0 : snag ? 0.2 : 0.06, knots: far || type === 'young' ? null : addKnots(r, Math.min(8, H * 0.4), 5, R), barkTile: 1.3, ground: y0, tintV }));
   out.contacts.push({ x, z, r: R * 2.6, dark: 0.5, moss: 0.6 });
@@ -487,7 +497,7 @@ function forestTree(x, z, r, out, kind, force = null) {
   }
   if (snag) {
     // broken stubs and one or two dead limbs
-    const stubs = sprout(trunk, { count: 7, t0: 0.3, t1: 0.98, angle: [50, 85], len: () => 0.5 + r() * 1.6, rRatio: 0.4, rTip: 0.02, planar: false, wiggle: 0.3, segs: 3, droop: 0.15 }, r);
+    const stubs = sprout(trunk, { count: special ? 9 : 7, t0: 0.3, t1: 0.98, angle: [50, 85], len: () => (special ? 1.0 : 0.5) + r() * (special ? 2.4 : 1.6), rRatio: 0.4, rTip: 0.02, planar: false, wiggle: 0.3, segs: 3, droop: 0.15 }, r);
     for (const b of stubs) out.snags.push(tube(b, { radial: 5, collar: 0.5, barkTile: 0.7, tintV }));
     return;
   }
@@ -580,98 +590,33 @@ export function createTrees(quality) {
   heroRight(heroR, r);
 
   const forest = { geos: [], small: [], sprays: new Instances(), boughs: new Instances(), sprays2: new Instances(), boughs2: new Instances(), snags: [], leaves: new Instances(), contacts: [], roots: [], crowns: [], realNear: hi };
-  const placed = [{ x: HERO_TREES.left.x, z: HERO_TREES.left.z }, { x: HERO_TREES.right.x, z: HERO_TREES.right.z }];
-  const tooClose = (x, z, d) => placed.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < d * d);
-  const okGround = (x, z, margin) => {
-    const rv = river(x, z);
-    if (bankE(x, z, rv) < margin) return false;
-    if (pathDist(x, z) < 1.9) return false;
-    if (Math.hypot(x - 0.2, z - 8.6) < 3.2) return false;        // the viewer's spot on the trail
-    if (ROCKS.some((k) => Math.hypot(k.x - x, k.z - z) < k.r + 0.5)) return false;
-    if (Math.hypot(x + 5.0, z + 6.5) < 3.2) return false;
-    { const t = clamp(((x + 6.5) * -4.5 + (z + 6) * -4.5) / 40.5, 0, 1); if (Math.hypot(x + 6.5 + 4.5 * t, z + 6 + 4.5 * t) < 2.4) return false; }   // no trunk wall at the left edge of the water's-edge view        // room around the far-bank viewpoint (also the left edge of the water's-edge view)
-    // a gap in the canopy up-sun of the trail's end, so a pool of sunlight reaches the path
-    const sx = G.uSunDir.value.x, sz = G.uSunDir.value.z, sl = Math.hypot(sx, sz);
-    const t = clamp(((x - 0.3) * sx + (z - 6.2) * sz) / sl, 8, 19);
-    if (Math.hypot(x - (0.3 + (sx / sl) * t), z - (6.2 + (sz / sl) * t)) < 3.6) return false;
-    return true;
+  // The forest is planted from a locked list (src/layout.js) and every plant grows from its own seed, so moving,
+  // removing or adding one tree changes nothing else.
+  const seedOf = (x, z) => (Math.floor((x * 73.13 + z * 191.7 + 1000) * 1000) >>> 0) || 1;
+  const keep = (x, z, frac) => hi || (Math.abs(Math.sin(x * 51.7 + z * 13.3) * 9973.1) % 1) < frac;
+  const moved = (x, z) => {
+    for (const e of EDITS) if (Math.hypot(x - e.at[0], z - e.at[1]) < 0.06) return e;
+    return null;
   };
-  // Near and middle forest: full trees with twig sprays.
-  let tries = 0, nNear = 0;
-  const nearTarget = hi ? 135 : 80;
-  while (nNear < nearTarget && tries++ < 9000) {
-    const ang = r() * 6.283, rad = 5 + Math.pow(r(), 0.75) * 50;
-    const x = -1 + Math.cos(ang) * rad, z = -3 + Math.sin(ang) * rad;
-    // groves and gaps: trees crowd together in places and leave glades elsewhere
-    const grove = clamp(0.5 + 1.6 * fbm(x * 0.07, z * 0.07, 2, 70), 0, 1);
-    if (r() > 0.25 + 0.75 * grove) continue;
-    if (z < -14 && z > -45 && Math.abs(river(x, z).d) < river(x, z).w + 9 && r() < 0.4) continue;   // keep depth open along the river
-    if (!okGround(x, z, 0.9 + r() * 2.5) || tooClose(x, z, lerp(7.5, 3.4, grove) * (0.75 + r() * 0.5))) continue;
-    placed.push({ x, z }); nNear++;
-    forestTree(x, z, r, forest, Math.hypot(x + 1, z + 3) < (hi ? 30 : 20) ? 'near' : 'mid');
-    // trees come up in twos and threes from the same patch of light
-    for (let c = 0, nc = r() < 0.45 ? 1 + Math.floor(r() * 2) : 0; c < nc && nNear < nearTarget; c++) {
-      const ca = r() * 6.283, cd = 1.3 + r() * 1.5, cx = x + Math.cos(ca) * cd, cz = z + Math.sin(ca) * cd;
-      if (!okGround(cx, cz, 0.9) || tooClose(cx, cz, 1.15)) continue;
-      placed.push({ x: cx, z: cz }); nNear++;
-      forestTree(cx, cz, r, forest, Math.hypot(cx + 1, cz + 3) < (hi ? 30 : 20) ? 'near' : 'mid');
-    }
+  let nNear = 0, nFar = 0, nSap = 0, nShrub = 0;
+  for (let [x, z, kind, type, special] of LAYOUT.t) {
+    const e = moved(x, z);
+    if (e) { if (e.remove) continue; if (e.to) { x = e.to[0]; z = e.to[1]; } if (e.type) type = e.type; }
+    if (!keep(x, z, kind === 'far' ? 0.45 : 0.56) && !special) continue;
+    if (kind === 'near' && !hi && Math.hypot(x + 1, z + 3) > 20) kind = 'mid';
+    if (kind === 'far') nFar++; else nNear++;
+    forestTree(x, z, rng(seedOf(x, z)), forest, kind, type, !!special);
   }
-  // Big trees on both banks upstream lean together over the water and close the canopy above the river.
-  for (let i = 0; i < (hi ? 9 : 6); i++) {
-    for (let t2 = 0; t2 < 30; t2++) {
-      const z = -24 - r() * 32, side = i % 2 ? 1 : -1;
-      let x0 = 0; { let best = 1e9; for (let xx = -14; xx <= 14; xx += 0.5) { const d = Math.abs(river(xx, z).d); if (d < best) { best = d; x0 = xx; } } }
-      const x = x0 + side * (river(x0, z).w + 3.2 + r() * 3.5);
-      if (bankE(x, z) < 0.9 || tooClose(x, z, 3.2)) continue;
-      placed.push({ x, z }); nNear++;
-      forestTree(x, z, r, forest, z > -30 ? 'near' : 'mid', r() < 0.45 ? 'old' : 'beech');
-      break;
-    }
+  for (const s of SNAGS) forestTree(s[0], s[1], rng(seedOf(s[0], s[1])), forest, 'near', 'snag', true);
+  for (const [x, z] of LAYOUT.s) {
+    const e = moved(x, z);
+    if ((e && e.remove) || !keep(x, z, 0.47)) continue;
+    nSap++; sapling(x, z, rng(seedOf(x, z)), forest);
   }
-  // Two bleached dead trunks stand where the main views can see them.
-  for (const [sx0, sz0] of [[-9.5, -14.0], [7.6, -13.0]]) {
-    let x = sx0, z = sz0;
-    for (let k = 0; k < 40 && bankE(x, z) < 1.2; k++) { const rv = river(x, z), sg = Math.sign(rv.d) || 1; x += -rv.tz * sg * 0.4; z += rv.tx * sg * 0.4; }
-    placed.push({ x, z });
-    forestTree(x, z, r, forest, 'near', 'snag');
-  }
-  // Far ring: cheaper trees (bough cards only) that close the view and carry the atmospheric depth.
-  let nFar = 0; tries = 0;
-  const farTarget = hi ? 380 : 170;
-  while (nFar < farTarget && tries++ < 9000) {
-    const ang = r() * 6.283, rad = 36 + Math.pow(r(), 0.8) * 144;
-    const x = -1 + Math.cos(ang) * rad, z = -3 + Math.sin(ang) * rad;
-    if (bankE(x, z) < 1.5 || tooClose(x, z, 5.0)) continue;
-    placed.push({ x, z }); nFar++;
-    forestTree(x, z, r, forest, 'far');
-  }
-  // Understory.
-  let nSap = 0; tries = 0;
-  const sapTarget = hi ? 95 : 45;
-  const saps = [];
-  while (nSap < sapTarget && tries++ < 9000) {
-    const ang = r() * 6.283, rad = 3 + Math.pow(r(), 0.9) * 40;
-    const x = -1 + Math.cos(ang) * rad, z = -3 + Math.sin(ang) * rad;
-    if (!okGround(x, z, 0.5) || saps.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < 1.6) || tooClose(x, z, 0.9)) continue;
-    if (fbm(x * 0.09, z * 0.09, 2, 40) < -0.08) continue;      // saplings come in thickets
-    if (bankE(x, z) < 3.5 && r() < 0.75) continue;             // not a hedge along the water
-    if (x > -2.4 && x < 3.4 && z > 0.5 && z < 9.5) continue;   // keep the view down the trail to the water open
-    if (Math.hypot(x + 2.3, z - 5.0) < 4.2) continue;          // and the view up into the old tree's crown
-    saps.push({ x, z }); nSap++;
-    sapling(x, z, r, forest);
-  }
-
-  let nShrub = 0; tries = 0;
-  const shrubTarget = hi ? 78 : 26;
-  while (nShrub < shrubTarget && tries++ < 6000) {
-    const ang = r() * 6.283, rad = 6 + Math.pow(r(), 0.8) * 30;
-    const x = -1 + Math.cos(ang) * rad, z = -3 + Math.sin(ang) * rad;
-    if (!okGround(x, z, 0.8) || tooClose(x, z, 1.6) || saps.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < 4)) continue;
-    if (Math.hypot(x - 0.2, z - 8.4) < 6 || pathDist(x, z) < 3) continue;
-    if (fbm(x * 0.08 + 20, z * 0.08, 2, 44) < -0.14) continue;
-    saps.push({ x, z }); nShrub++;
-    shrub(x, z, r, forest);
+  for (const [x, z] of LAYOUT.b) {
+    const e = moved(x, z);
+    if ((e && e.remove) || !keep(x, z, 0.34)) continue;
+    nShrub++; shrub(x, z, rng(seedOf(x, z)), forest);
   }
 
   const barkHero = barkMaterial('japanese_hackberry_bark', { tint: [1.5, 1.5, 1.38], desat: 0.5, moss: 0.85, lichen: 0.6, normal: 1.7, mossHeight: 1.3 });

@@ -267,7 +267,7 @@ def shoot(cv, x, y, ang, length, leaf_len, depth=0, bare=0.0):
 
 def make_spray(i, size=1024):
     cv = Canvas(size)
-    leaf_len = size * 0.118
+    leaf_len = size * 0.092
     # a main shoot whose lower part carries side shoots, as on a real branch end
     shoot(cv, size * 0.5, size * 0.985, 90 + random.gauss(0, 4), size * random.uniform(0.80, 0.86), leaf_len, 0, bare=[0.42, 0.5, 0.36, 0.46][i])
     return cv

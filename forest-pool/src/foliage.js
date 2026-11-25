@@ -92,7 +92,7 @@ function foliageShading(mat, { card, dry = false }) {
           // keep coverage as the cut-out minifies, so distant crowns stay dense instead of dissolving
           vec2 tuv = vMapUv * vec2(textureSize(map, 0));
           float lod = max(0.0, 0.5 * log2(max(dot(dFdx(tuv), dFdx(tuv)), dot(dFdy(tuv), dFdy(tuv)))));
-          diffuseColor.a *= 1.0 + lod * 0.42;
+          diffuseColor.a *= 1.0 + lod * 0.2;
         }` : ''}`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
