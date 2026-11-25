@@ -450,15 +450,15 @@ function forestTree(x, z, r, out, kind, force = null) {
   const y0 = heightAt(x, z);
   const far = kind === 'far', mid = kind === 'mid';
   const k = r();
-  const type = force ? force : far ? (k < 0.08 ? 'snag' : k < 0.3 ? 'old' : k < 0.5 ? 'young' : 'beech') : k < 0.05 ? 'snag' : k < 0.26 ? 'old' : k < 0.4 ? 'young' : 'beech';
-  let H = 21 + r() * 9, R = 0.22 + r() * r() * 0.3;
-  if (type === 'old') { H = 25 + r() * 8; R = 0.46 + r() * 0.3; }
+  const type = force ? force : far ? (k < 0.08 ? 'snag' : k < 0.3 ? 'old' : k < 0.5 ? 'young' : 'beech') : k < 0.08 ? 'snag' : k < 0.22 ? 'old' : k < 0.36 ? 'young' : 'beech';
+  let H = 21 + r() * 9, R = 0.15 + Math.pow(r(), 3) * 0.42;        // many slim stems, few stout ones
+  if (type === 'old') { H = 25 + r() * 8; R = 0.4 + r() * r() * 0.22; }
   if (type === 'young') { H = 10 + r() * 7; R = 0.07 + H * 0.006 + r() * 0.03; }
-  if (type === 'snag') { H = 5 + r() * 7; R = 0.22 + r() * 0.2; }
+  if (type === 'snag') { H = 7 + r() * 9; R = 0.2 + r() * 0.2; }
   // Trees on the bank lean out over the water toward the light; everything else leans a few degrees its own way.
   const rv = river(x, z);
   const e = Math.abs(rv.d) - rv.w;
-  const toward = -Math.sign(rv.d) * smoothstep(9, 1.5, e) * (0.05 + r() * 0.13) * (force ? 1.3 : 1);
+  const toward = -Math.sign(rv.d) * smoothstep(9, 1.5, e) * (0.05 + r() * 0.13) * (force ? 0.25 : 1);
   const la = r() * 6.283, lm = (type === 'young' ? 0.06 + r() * 0.16 : 0.02 + r() * 0.1) * (far ? 1.7 : 1);
   const lx = -rv.tz * toward + Math.cos(la) * lm, lz = rv.tx * toward + Math.sin(la) * lm;
   const ctrl = [];
@@ -590,19 +590,20 @@ export function createTrees(quality) {
     // groves and gaps: trees crowd together in places and leave glades elsewhere
     const grove = clamp(0.5 + 1.6 * fbm(x * 0.07, z * 0.07, 2, 70), 0, 1);
     if (r() > 0.25 + 0.75 * grove) continue;
+    if (z < -14 && z > -45 && Math.abs(river(x, z).d) < river(x, z).w + 9 && r() < 0.5) continue;   // keep depth open along the river
     if (!okGround(x, z, 0.9 + r() * 2.5) || tooClose(x, z, lerp(6.5, 2.3, grove) * (0.75 + r() * 0.5))) continue;
     placed.push({ x, z }); nNear++;
     forestTree(x, z, r, forest, Math.hypot(x + 1, z + 3) < (hi ? 30 : 20) ? 'near' : 'mid');
   }
   // Big trees on both banks upstream lean together over the water and close the canopy above the river.
-  for (let i = 0; i < (hi ? 13 : 8); i++) {
+  for (let i = 0; i < (hi ? 9 : 6); i++) {
     for (let t2 = 0; t2 < 30; t2++) {
-      const z = -19 - r() * 36, side = i % 2 ? 1 : -1;
+      const z = -24 - r() * 32, side = i % 2 ? 1 : -1;
       let x0 = 0; { let best = 1e9; for (let xx = -14; xx <= 14; xx += 0.5) { const d = Math.abs(river(xx, z).d); if (d < best) { best = d; x0 = xx; } } }
-      const x = x0 + side * (river(x0, z).w + 2.2 + r() * 2.5);
+      const x = x0 + side * (river(x0, z).w + 3.2 + r() * 3.5);
       if (bankE(x, z) < 0.9 || tooClose(x, z, 3.2)) continue;
       placed.push({ x, z }); nNear++;
-      forestTree(x, z, r, forest, z > -30 ? 'near' : 'mid', 'old');
+      forestTree(x, z, r, forest, z > -30 ? 'near' : 'mid', r() < 0.45 ? 'old' : 'beech');
       break;
     }
   }

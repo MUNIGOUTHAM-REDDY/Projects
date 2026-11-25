@@ -103,7 +103,7 @@ export function createFallingLeaves(quality) {
       const o = L[i], sc = o.size * SCALE * Math.max(0.001, o.fade);
       // afloat: wet and curled, lying low so the edges dip under the surface
       const fl = o.mode === 2;
-      m.compose(p.set(o.x, o.y - (fl ? 0.006 : 0), o.z), o.q, s.set(sc * (fl ? 0.85 : 1), sc * (fl ? 0.85 : 1), sc * (fl ? 2.2 : 1)));
+      m.compose(p.set(o.x, o.y - (fl ? 0.006 : 0), o.z), o.q, s.set(sc * (fl ? 0.85 : 1), sc * (fl ? 0.85 : 1), sc * (fl ? 2.2 : 1.9)));
       const t = tints[i % tints.length], v = o.v * (fl ? 0.6 : 1);
       mesh.instanceColor.setXYZ(i, t[0] * v, t[1] * v, t[2] * v);
       mesh.setMatrixAt(i, m);

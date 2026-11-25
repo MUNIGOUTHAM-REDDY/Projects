@@ -66,9 +66,9 @@ const VolumetricShader = {
         acc += sunVis(p) * dens * dt * exp(-t * 0.05);
       }
       float mu = dot(rd, uSunDir);
-      float g = 0.7;
+      float g = 0.85;
       float phase = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) * 0.25 + 0.1;
-      phase = min(phase, 1.7);                          // looking straight into the sun must not white out the crown
+      phase = min(phase, 1.5);                          // looking straight into the sun must not white out the crown
       // against open sky the glow stays near-white and restrained, so it never turns the blue green
       vec3 col = (d >= 1.0 ? vec3(1.0, 0.97, 0.9) * 0.6 : vec3(1.0, 0.88, 0.62)) * acc * phase * 0.026 * uStrength;
       gl_FragColor = vec4(col, 1.0);
@@ -127,11 +127,11 @@ const CompositeShader = {
         float t = length(rd); rd /= t;
         float b = 0.3;
         float ry = abs(rd.y) < 1e-3 ? 1e-3 : rd.y;
-        float od = 0.0075 * exp(-b * max(ro.y, 0.0)) * (1.0 - exp(-b * ry * t)) / (b * ry);
+        float od = 0.013 * exp(-b * max(ro.y, 0.0)) * (1.0 - exp(-b * ry * t)) / (b * ry);
         float f = (1.0 - exp(-max(od, 0.0))) * uMist;
         float mu = max(dot(rd, uSunDir), 0.0);
-        vec3 mist = vec3(0.105, 0.17, 0.165) + vec3(0.32, 0.25, 0.12) * pow(mu, 3.0);
-        col = mix(col, mist, clamp(f, 0.0, 0.6));
+        vec3 mist = vec3(0.17, 0.26, 0.24) + vec3(0.32, 0.25, 0.12) * pow(mu, 3.0);
+        col = mix(col, mist, clamp(f, 0.0, 0.75));
       }
       if (uVolOn > 0.5) {
         vec2 px = 1.0 / uRes;
@@ -261,7 +261,7 @@ export function createPipeline({ renderer, scene, camera, water, sun, quality, s
   const scenePass = new ScenePass(renderer, scene, camera, water, sun, quality);
   scenePass.still = still;
   composer.addPass(scenePass);
-  const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.22, 0.7, 0.95);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.18, 0.4, 0.95);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
   const fxaa = new ShaderPass(FXAAShader);
