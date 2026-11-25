@@ -120,9 +120,15 @@ export function createFallingLeaves(quality) {
       const spots = [[0.75, 2.25, 6.3], [-0.55, 2.9, 5.2], [1.3, 1.5, 4.4], [1.0, 1.05, -0.4], [0.2, 1.5, -2.0], [1.9, 0.8, -1.6], [-2.0, 3.0, 5.0], [-2.7, 4.2, 4.2], [-3.9, 2.0, -8.2]];
       spots.forEach((sp, i) => {
         const o = L[i];
-        o.x = sp[0]; o.y = sp[1]; o.z = sp[2]; o.mode = 0; o.fade = 1; o.tumble = i % 3 === 1; o.size = 0.085 + 0.01 * (i % 3);
+        o.x = sp[0]; o.y = sp[1]; o.z = sp[2]; o.mode = 0; o.fade = 1; o.tumble = i % 3 === 1; o.size = 0.095 + 0.01 * (i % 3);
         o.age = 0.4 + i * 0.37;
         step(o, 0.001, time);
+        // caught side-on to the viewer, mid-swing, so the blade reads as a leaf rather than a sliver
+        qa.setFromAxisAngle(ax.set(0, 1, 0), 0.6 + i * 1.3);
+        qb.setFromAxisAngle(ax.set(1, 0, 0), -0.55 - 0.25 * (i % 3));
+        o.q.copy(qa).multiply(qb);
+        qb.setFromAxisAngle(ax.set(0, 1, 0), 0.5 * (i % 2 ? 1 : -1));
+        o.q.multiply(qb);
       });
     } else {
       simT += dt;

@@ -73,8 +73,8 @@ export function createSky({ forEnv = false } = {}) {
         // the forest closes in at the horizon: a soft wall of distant crowns, darker toward the ground
         float az = atan(d.z, d.x);
         float top = 0.3 + 0.05 * sin(az * 7.0) + 0.035 * sin(az * 19.0 + 1.3) + 0.02 * sin(az * 43.0 + 0.7);
-        vec3 wall = mix(uFog * 0.7, uFog * 2.2 + vec3(0.02, 0.05, 0.01), smoothstep(-0.02, top, y));
-        c = mix(wall, c, smoothstep(top - 0.05, top + 0.06, y));
+        vec3 wall = mix(uFog * 0.7, mix(uFog * 1.5, haze * 0.55, 0.45), smoothstep(-0.02, top, y));
+        c = mix(wall, c, smoothstep(top - 0.03, top + 0.035, y));
         float s = max(dot(d, normalize(uSun)), 0.0);
         c += vec3(1.0, 0.9, 0.68) * (pow(s, 10.0) * 0.55 + pow(s, 400.0) * 60.0);
         `}
