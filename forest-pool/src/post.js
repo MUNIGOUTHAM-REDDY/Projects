@@ -68,6 +68,7 @@ const VolumetricShader = {
       float mu = dot(rd, uSunDir);
       float g = 0.7;
       float phase = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) * 0.25 + 0.1;
+      phase = min(phase, 1.7);                          // looking straight into the sun must not white out the crown
       // against open sky the glow stays near-white and restrained, so it never turns the blue green
       vec3 col = (d >= 1.0 ? vec3(1.0, 0.97, 0.9) * 0.6 : vec3(1.0, 0.88, 0.62)) * acc * phase * 0.026 * uStrength;
       gl_FragColor = vec4(col, 1.0);
