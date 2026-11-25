@@ -76,7 +76,7 @@ export function createSky({ forEnv = false } = {}) {
         vec3 wall = uFog;
         c = mix(wall, c, smoothstep(top - 0.03, top + 0.12, y));
         float s = max(dot(d, normalize(uSun)), 0.0);
-        c += vec3(1.0, 0.9, 0.68) * (pow(s, 10.0) * 0.55 + pow(s, 400.0) * 60.0);
+        c += vec3(1.0, 0.9, 0.68) * (pow(s, 10.0) * 0.55 + pow(s, 400.0) * 22.0);
         `}
         gl_FragColor = vec4(c, 1.0);
       }`,

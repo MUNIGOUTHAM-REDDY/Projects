@@ -75,7 +75,7 @@ const sky = createSky();
   envScene.add(createSky({ forEnv: true }));
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(envScene, 0.02).texture;
-  scene.environmentIntensity = Number(params.get('env') || 1.6);
+  scene.environmentIntensity = Number(params.get('env') || 1.5);
   pmrem.dispose();
 }
 scene.add(sky, terrain, water, trees, rocks, cover, falling, motes);

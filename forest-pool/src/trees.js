@@ -475,7 +475,7 @@ function forestTree(x, z, r, out, kind, force = null) {
   trunk.radiusAt = (t) => (snag ? R * (1 - 0.35 * t) : R * (1 - 0.84 * Math.pow(t, 1.25)));
   trunk.swayAt = (t) => (snag ? 0 : (type === 'young' ? 1.4 : 1.0) * Math.pow(Math.max(0, t - 0.1), 2.3));
   // every trunk its own shade of grey: some weathered pale, some dark and wet-looking, a few green with algae
-  const bv = snag ? 0.7 : 0.72 + r() * 0.4, bh = r();
+  const bv = snag ? (force ? 1.45 : 0.95) : 0.72 + r() * 0.4, bh = r();
   const tintV = [bv * (0.96 + bh * 0.08), bv * (0.98 + (1 - bh) * 0.06), bv * (0.9 + bh * 0.1)];
   out.geos.push(tube(trunk, { radial: far ? 7 : type === 'young' ? 9 : 14, flare: far ? 0 : type === 'old' ? 1.15 : 0.8, flareLobes: 4 + Math.floor(r() * 3), flareH: 0.4 + R * 0.6, seed: r() * 10, lumps: far ? 0 : snag ? 0.12 : 0.06, knots: far || type === 'young' ? null : addKnots(r, Math.min(8, H * 0.4), 5, R), barkTile: 1.3, ground: y0, tintV }));
   out.contacts.push({ x, z, r: R * 2.6, dark: 0.5, moss: 0.6 });
@@ -581,8 +581,8 @@ export function createTrees(quality) {
     if (ROCKS.some((k) => Math.hypot(k.x - x, k.z - z) < k.r + 0.5)) return false;
     // a gap in the canopy up-sun of the trail's end, so a pool of sunlight reaches the path
     const sx = G.uSunDir.value.x, sz = G.uSunDir.value.z, sl = Math.hypot(sx, sz);
-    const t = clamp(((x - 0.3) * sx + (z - 6.2) * sz) / sl, 7, 24);
-    if (Math.hypot(x - (0.3 + (sx / sl) * t), z - (6.2 + (sz / sl) * t)) < 5.5) return false;
+    const t = clamp(((x - 0.3) * sx + (z - 6.2) * sz) / sl, 8, 19);
+    if (Math.hypot(x - (0.3 + (sx / sl) * t), z - (6.2 + (sz / sl) * t)) < 3.6) return false;
     return true;
   };
   // Near and middle forest: full trees with twig sprays.
@@ -594,7 +594,7 @@ export function createTrees(quality) {
     // groves and gaps: trees crowd together in places and leave glades elsewhere
     const grove = clamp(0.5 + 1.6 * fbm(x * 0.07, z * 0.07, 2, 70), 0, 1);
     if (r() > 0.25 + 0.75 * grove) continue;
-    if (z < -14 && z > -45 && Math.abs(river(x, z).d) < river(x, z).w + 9 && r() < 0.5) continue;   // keep depth open along the river
+    if (z < -14 && z > -45 && Math.abs(river(x, z).d) < river(x, z).w + 9 && r() < 0.4) continue;   // keep depth open along the river
     if (!okGround(x, z, 0.9 + r() * 2.5) || tooClose(x, z, lerp(6.5, 2.3, grove) * (0.75 + r() * 0.5))) continue;
     placed.push({ x, z }); nNear++;
     forestTree(x, z, r, forest, Math.hypot(x + 1, z + 3) < (hi ? 30 : 20) ? 'near' : 'mid');
@@ -611,11 +611,18 @@ export function createTrees(quality) {
       break;
     }
   }
+  // Two bleached dead trunks stand where the main views can see them.
+  for (const [sx0, sz0] of [[-4.6, -11.5], [8.0, -14.5]]) {
+    let x = sx0, z = sz0;
+    for (let k = 0; k < 40 && bankE(x, z) < 1.2; k++) { const rv = river(x, z), sg = Math.sign(rv.d) || 1; x += -rv.tz * sg * 0.4; z += rv.tx * sg * 0.4; }
+    placed.push({ x, z });
+    forestTree(x, z, r, forest, 'near', 'snag');
+  }
   // Far ring: cheaper trees (bough cards only) that close the view and carry the atmospheric depth.
   let nFar = 0; tries = 0;
   const farTarget = hi ? 380 : 170;
   while (nFar < farTarget && tries++ < 9000) {
-    const ang = r() * 6.283, rad = 50 + Math.pow(r(), 0.8) * 130;
+    const ang = r() * 6.283, rad = 36 + Math.pow(r(), 0.8) * 144;
     const x = -1 + Math.cos(ang) * rad, z = -3 + Math.sin(ang) * rad;
     if (bankE(x, z) < 1.5 || tooClose(x, z, 5.0)) continue;
     placed.push({ x, z }); nFar++;

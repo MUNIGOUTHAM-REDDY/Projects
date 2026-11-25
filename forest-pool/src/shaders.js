@@ -68,8 +68,8 @@ float canopyGap(vec3 w, vec3 sunDir){
   vec2 o = sunDir.xz / max(sunDir.y, 0.2) * 16.0;
   a += 0.5 * exp(-dot(p - o - vec2(0.3, 6.2), p - o - vec2(0.3, 6.2)) / 9.0);
   a += 0.26 * exp(-dot(p - o - vec2(-2.0, -1.0), p - o - vec2(-2.0, -1.0)) / 30.0);
-  a += 0.24 * exp(-dot(p - o - vec2(2.5, -9.5), p - o - vec2(2.5, -9.5)) / 40.0);
-  return smoothstep(0.39, 0.55, a);
+  a += 0.17 * exp(-dot(p - o - vec2(2.5, -9.5), p - o - vec2(2.5, -9.5)) / 40.0);
+  return smoothstep(0.43, 0.6, a);
 }
 float canopyDapple(vec3 w, vec3 sunDir){
   vec2 p = w.xz + sunDir.xz / max(sunDir.y, 0.2) * (14.0 - w.y);

@@ -59,9 +59,9 @@ export function createGroundCover(quality) {
     for (let i = 0; i < 9; i++) { const a = r() * 6.283, d = 0.8 + r() * 1.5; addFern(h.x + Math.cos(a) * d, h.z + Math.sin(a) * d, 0.8 + r() * 0.8); }
   }
   let tries = 0;
-  const fernTarget = hi ? 520 : 240;
+  const fernTarget = hi ? 760 : 300;
   while (ferns.length < fernTarget && tries++ < 20000) {
-    const a = r() * 6.283, d = 2 + Math.pow(r(), 0.8) * 34;
+    const a = r() * 6.283, d = 2 + Math.pow(r(), 0.8) * 46;
     const x = -1 + Math.cos(a) * d, z = -3 + Math.sin(a) * d;
     const e2 = bankE(x, z);
     const dens = 0.25 + 0.75 * smoothstep(7, 1, e2) + 0.9 * Math.max(0, fbm(x * 0.13, z * 0.13, 2, 60));
@@ -176,8 +176,8 @@ export function createGroundCover(quality) {
   // --- Fallen sticks --------------------------------------------------------------------
   const sticks = [];
   tries = 0;
-  while (sticks.length < (hi ? 110 : 50) && tries++ < 5000) {
-    const a = r() * 6.283, d = Math.pow(r(), 0.7) * 26;
+  while (sticks.length < (hi ? 170 : 60) && tries++ < 5000) {
+    const a = r() * 6.283, d = Math.pow(r(), 0.7) * 38;
     const x = -0.5 + Math.cos(a) * d, z = 1 + Math.sin(a) * d;
     if (bankE(x, z) < 0.4 || nearRock(x, z, 0) || nearHero(x, z, 0.6)) continue;
     const v = 0.7 + r() * 0.4;

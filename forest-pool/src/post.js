@@ -68,9 +68,10 @@ const VolumetricShader = {
       float mu = dot(rd, uSunDir);
       float g = 0.85;
       float phase = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) * 0.25 + 0.1;
-      phase = min(phase, 2.6);                          // looking straight into the sun must not white out the crown
+      phase = min(phase, 2.0);                          // looking straight into the sun must not white out the crown
       // against open sky the glow stays near-white and restrained, so it never turns the blue green
-      vec3 col = (d >= 1.0 ? vec3(1.0, 0.97, 0.9) * 0.6 : vec3(1.0, 0.88, 0.62)) * acc * phase * 0.026 * uStrength;
+      // open sky already contains the sun's glare: adding in-scatter there only veils the branches in front of it
+      vec3 col = (d >= 1.0 ? vec3(1.0, 0.97, 0.9) * 0.12 : vec3(1.0, 0.88, 0.62)) * acc * phase * 0.021 * uStrength;
       gl_FragColor = vec4(col, 1.0);
     }`,
 };
@@ -86,6 +87,8 @@ const CompositeShader = {
   fragmentShader: /* glsl */ `
     #include <common>
     #include <packing>
+    float h12(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+    float vnoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(h12(i),h12(i+vec2(1,0)),f.x), mix(h12(i+vec2(0,1)),h12(i+vec2(1,1)),f.x), f.y); }
     uniform sampler2D tColor, tDepth, tVol;
     uniform vec2 uRes; uniform float uNear, uFar, uFocus, uAperture, uDof, uVolOn, uMist;
     uniform mat4 uProjInv, uCamWorld; uniform vec3 uSunDir;
@@ -125,21 +128,24 @@ const CompositeShader = {
         vec3 ro = (uCamWorld * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
         vec3 rd = (uCamWorld * vec4(vp.xyz, 1.0)).xyz - ro;
         float t = length(rd); rd /= t;
-        float b = 0.3;
+        float b = 0.5;                                      // thick in the first few metres, gone in the crowns
         float ry = abs(rd.y) < 1e-3 ? 1e-3 : rd.y;
-        float od = 0.013 * exp(-b * max(ro.y, 0.0)) * (1.0 - exp(-b * ry * t)) / (b * ry);
+        float od = 0.011 * (0.7 + 0.6 * vnoise(vp.xy * 0.0 + (ro + rd * min(t, 30.0)).xz * 0.07)) * exp(-b * max(ro.y, 0.0)) * (1.0 - exp(-b * ry * t)) / (b * ry);
         float f = (1.0 - exp(-max(od, 0.0))) * uMist;
         float mu = max(dot(rd, uSunDir), 0.0);
-        vec3 mist = vec3(0.17, 0.26, 0.24) + vec3(0.32, 0.25, 0.12) * pow(mu, 3.0);
-        col = mix(col, mist, clamp(f, 0.0, 0.75));
+        vec3 mist = vec3(0.105, 0.17, 0.165) + vec3(0.3, 0.23, 0.11) * pow(mu, 3.0);
+        col = mix(col, mist, clamp(f, 0.0, 0.62) * smoothstep(2.0, 14.0, t));   // near foliage keeps its colour
       }
       if (uVolOn > 0.5) {
         vec2 px = 1.0 / uRes;
+        // depth-aware upsample: light scattered in front of sky must not bleed onto nearer branches
+        float zc = texture2D(tDepth, vUv).x;
+        #define VT(o) (texture2D(tVol, vUv + px * o).rgb * (abs(texture2D(tDepth, vUv + px * o).x - zc) < 0.002 ? 1.0 : 0.25))
         vec3 v = texture2D(tVol, vUv).rgb * 0.4;
-        v += texture2D(tVol, vUv + px * vec2(1.6, 0.8)).rgb * 0.15;
-        v += texture2D(tVol, vUv + px * vec2(-1.6, -0.8)).rgb * 0.15;
-        v += texture2D(tVol, vUv + px * vec2(0.8, -1.6)).rgb * 0.15;
-        v += texture2D(tVol, vUv + px * vec2(-0.8, 1.6)).rgb * 0.15;
+        v += VT(vec2(1.6, 0.8)) * 0.15;
+        v += VT(vec2(-1.6, -0.8)) * 0.15;
+        v += VT(vec2(0.8, -1.6)) * 0.15;
+        v += VT(vec2(-0.8, 1.6)) * 0.15;
         col += v;
       }
       gl_FragColor = vec4(col, 1.0);
@@ -147,7 +153,7 @@ const CompositeShader = {
 };
 
 const GradeShader = {
-  uniforms: { tDiffuse: { value: null }, uVig: { value: 0.34 }, uSat: { value: 1.0 }, uGrain: { value: 0.035 }, uTime: { value: 0 } },
+  uniforms: { tDiffuse: { value: null }, uVig: { value: 0.34 }, uSat: { value: 1.07 }, uGrain: { value: 0.035 }, uTime: { value: 0 } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse; uniform float uVig, uSat, uGrain, uTime; varying vec2 vUv;
@@ -156,7 +162,8 @@ const GradeShader = {
       vec3 c = texture2D(tDiffuse, vUv).rgb;
       float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
       // filmic toe/shoulder, then a gentle split tone: cool green-teal shadows, warm highlights
-      c = mix(c, c * c * (3.0 - 2.0 * c), 0.38);
+      c = max(c - 0.014, 0.0) * 1.014;                  // seat the blacks
+      c = mix(c, c * c * (3.0 - 2.0 * c), 0.42);
       c = mix(vec3(l), c, uSat);
       c += vec3(-0.016, 0.004, 0.016) * (1.0 - smoothstep(0.0, 0.45, l));
       c *= mix(vec3(1.0), vec3(1.035, 1.005, 0.95), smoothstep(0.5, 1.0, l));
