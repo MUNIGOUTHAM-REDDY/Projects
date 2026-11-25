@@ -131,9 +131,13 @@ export function underwater(mat, { caustics = true, wet = true } = {}) {
           float viewLen = dY / max(camH + dY, 0.01) * length(cameraPosition - vUW);
           float L = min(viewLen, dY * 3.5) + dY * 0.9;
           ${caustics ? `
-          float ca = causticPattern(vUW.xz * 0.9 + vec2(0.0, uTime * 0.02), uTime * 0.5);
-          ca += 0.6 * causticPattern(vUW.xz * 1.7 + 3.1, uTime * 0.41);
-          gl_FragColor.rgb *= 1.0 + ca * 2.2 * exp(-dY * 0.5) * smoothstep(0.0, 0.12, dY);` : ''}
+          // the pattern is periodic, so warp it and cross two rotated copies: no lattice shows through
+          vec2 cw = vUW.xz + 0.9 * vec2(vnoise(vUW.xz * 0.31 + 3.0), vnoise(vUW.xz * 0.31 + 11.0)) + 0.25 * vec2(vnoise(vUW.xz * 1.3), vnoise(vUW.xz * 1.3 + 7.0));
+          float ca = causticPattern(cw * 0.47 + vec2(0.0, uTime * 0.02), uTime * 0.5);
+          ca = ca * 0.9 + 0.9 * causticPattern(mat2(0.80, 0.60, -0.60, 0.80) * cw * 0.83 + 3.1, uTime * 0.41) * (0.4 + ca);
+          float upN = dot(normal, normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz));
+          ca *= smoothstep(0.25, 0.7, upN) * (0.5 + vnoise(vUW.xz * 0.2 + 50.0));      // light falls on upward faces; patchy under the canopy
+          gl_FragColor.rgb *= 1.0 + ca * 1.7 * exp(-dY * 0.5) * smoothstep(0.0, 0.12, dY);` : ''}
           vec3 trans = exp(-uAbsorb * L);
           gl_FragColor.rgb = gl_FragColor.rgb * trans + uWaterScatter * (1.0 - exp(-0.38 * L));
         }`);

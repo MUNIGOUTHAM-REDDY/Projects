@@ -85,17 +85,17 @@ const WaterShader = {
       vec2 q = vSD;
 
       // long glassy swells, finer chop where the water runs fast and shallow, a breath of wind
-      fl = fl * min(1.0, 0.9 / max(length(fl), 1e-3));        // cap the shear so fast water does not smear
-      vec3 n1 = flowNormal(q, fl, vec2(0.5, 0.17), 2.2, 0.0);
-      vec3 n2 = flowNormal(q, fl, vec2(1.5, 0.6), 1.5, 0.3);
-      vec3 n4 = flowNormal(q, fl, vec2(3.4, 1.3), 0.9, 0.6);
+      fl = fl * min(1.0, 0.55 / max(length(fl), 1e-3));        // cap the shear so fast water does not smear
+      vec3 n1 = flowNormal(q, fl, vec2(0.5, 0.27), 1.8, 0.0);
+      vec3 n2 = flowNormal(q, fl, vec2(1.5, 0.85), 1.3, 0.3);
+      vec3 n4 = flowNormal(q, fl, vec2(3.4, 2.0), 0.8, 0.6);
       vec3 n3 = texture2D(tWaterN, p * 0.19 + uTime * vec2(0.013, 0.009)).xyz * 2.0 - 1.0;
       float fast = smoothstep(0.15, 1.15, speed);
       float chop = 0.17 + 0.6 * fast + 0.6 * clamp(foamK, 0.0, 1.0);
       chop *= smoothstep(0.0, 0.08, depth) * 0.75 + 0.25;
       // pools carry only a slow swell; chop belongs to the riffles
       vec2 nq = (n1.xy * 1.0 + n2.xy * (0.12 + 0.5 * fast) + n4.xy * (0.3 * fast * fast)) * chop;
-      nq.y *= 0.5;                                          // crests run with the flow
+      nq.y *= 0.7;                                          // crests run with the flow
       // standing waves: stationary crests across the current below rocks and ledges
       nq.y += sin(q.y * 7.0 + sin(q.x * 2.3) * 1.5) * clamp(foamK, 0.0, 1.0) * 0.22 * smoothstep(0.3, 1.0, speed);
       vec2 nxy = Nl * nq.x + T * nq.y + n3.xy * 0.03;

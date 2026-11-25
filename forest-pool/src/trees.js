@@ -390,7 +390,7 @@ function heroRight(out, r) {
   const trunk = new Limb(trunkPath, 0.31, 0.05, 0, 0.9, 0);
   trunk.swayAt = (t) => 0.9 * Math.pow(Math.max(0, t - 0.1), 2.2);
   out.geos.push(tube(trunk, { radial: 26, flare: 1.5, flareLobes: 4, flareH: 0.55, seed: 4.1, lumps: 0.06, knots: addKnots(r, 9, 10, 0.3), barkTile: 1.5, ground: y0 }));
-  roots(x, z, y0, r, out.geos, { count: 8, len: 2.9, rad: 0.13, seed: 2.2 });
+  roots(x, z, y0, r, out.rootGeos, { count: 8, len: 2.9, rad: 0.13, seed: 2.2, tintV: [0.6, 0.57, 0.52] });
   roots(x, z, y0, r, out.geos, { count: 2, len: 5.8, rad: 0.08, seed: 5.1, heading: 2.48, spread: 0.3 });
   const leader = (pts, r0, r1, s1) => new Limb(smoothPath(kinked(pts, r, r0 > 0.15 ? 0.05 : 0.16), 6), r0, r1, 0.004, s1, 1);
   const mains = [
@@ -446,11 +446,11 @@ function crown(axis, r, out, { t0, nL, lenBase, far, mid, tint, tintV, H }) {
 
 // Forest trees come in several characters: tall clean-boled beeches, heavy old trees that fork into
 // co-dominant leaders, slender leaning poles with low crowns, and the occasional dead snag.
-function forestTree(x, z, r, out, kind) {
+function forestTree(x, z, r, out, kind, force = null) {
   const y0 = heightAt(x, z);
   const far = kind === 'far', mid = kind === 'mid';
   const k = r();
-  const type = far ? (k < 0.08 ? 'snag' : k < 0.3 ? 'old' : k < 0.5 ? 'young' : 'beech') : k < 0.05 ? 'snag' : k < 0.24 ? 'old' : k < 0.5 ? 'young' : 'beech';
+  const type = force ? force : far ? (k < 0.08 ? 'snag' : k < 0.3 ? 'old' : k < 0.5 ? 'young' : 'beech') : k < 0.05 ? 'snag' : k < 0.26 ? 'old' : k < 0.4 ? 'young' : 'beech';
   let H = 21 + r() * 9, R = 0.22 + r() * r() * 0.3;
   if (type === 'old') { H = 25 + r() * 8; R = 0.46 + r() * 0.3; }
   if (type === 'young') { H = 10 + r() * 7; R = 0.07 + H * 0.006 + r() * 0.03; }
@@ -458,7 +458,7 @@ function forestTree(x, z, r, out, kind) {
   // Trees on the bank lean out over the water toward the light; everything else leans a few degrees its own way.
   const rv = river(x, z);
   const e = Math.abs(rv.d) - rv.w;
-  const toward = -Math.sign(rv.d) * smoothstep(9, 1.5, e) * (0.05 + r() * 0.13);
+  const toward = -Math.sign(rv.d) * smoothstep(9, 1.5, e) * (0.05 + r() * 0.13) * (force ? 1.3 : 1);
   const la = r() * 6.283, lm = (type === 'young' ? 0.06 + r() * 0.16 : 0.02 + r() * 0.1) * (far ? 1.7 : 1);
   const lx = -rv.tz * toward + Math.cos(la) * lm, lz = rv.tx * toward + Math.sin(la) * lm;
   const ctrl = [];
@@ -492,8 +492,8 @@ function forestTree(x, z, r, out, kind) {
   }
   const tint = [0.86 + r() * 0.3, 0.94 + r() * 0.14, 0.72 + r() * 0.4];
   const crown0 = type === 'young' ? 0.25 + r() * 0.2 : type === 'old' ? 0.3 + r() * 0.12 : 0.34 + r() * 0.26;
-  const lenBase = (type === 'young' ? 3.4 : type === 'old' ? 8.5 : 7.0) * (H / 26) * (type === 'young' ? 26 / H * 0.9 : 1);
-  const nL = far ? 10 : type === 'young' ? 9 + Math.floor(r() * 4) : 13 + Math.floor(r() * 5);
+  const lenBase = (type === 'young' ? 4.4 : type === 'old' ? 8.5 : 7.0) * (H / 26) * (type === 'young' ? 26 / H * 0.9 : 1);
+  const nL = far ? 10 : type === 'young' ? 13 + Math.floor(r() * 4) : 13 + Math.floor(r() * 5);
   const o = { far, mid, tint, tintV, H };
   if (type === 'old' && !far) {
     // co-dominant leaders split off low in the crown and carry their own limbs
@@ -519,13 +519,14 @@ const nearViewer = (x, z) => Math.hypot(x - 0.3, z - 6.5) < 14 || Math.hypot(x -
 
 function sapling(x, z, r, out) {
   const y0 = heightAt(x, z);
-  const H = 1.2 + r() * r() * 4.2, R = 0.012 + H * 0.007;
+  const H = 0.9 + r() * r() * 5.2, R = 0.012 + H * 0.007;
   const lean = r() * 6.28, la = 0.1 + r() * 0.25;
   const ctrl = [];
   for (let i = 0; i <= 4; i++) { const f = i / 4; ctrl.push(V(x + Math.cos(lean) * la * H * f * f + (i ? (r() - 0.5) * 0.12 : 0), y0 - 0.1 + H * f, z + Math.sin(lean) * la * H * f * f + (i ? (r() - 0.5) * 0.12 : 0))); }
   const stem = new Limb(smoothPath(ctrl, 3), R, 0.004, 0, 0.12 * H * 0.4, 0);
   out.small.push(tube(stem, { radial: 5, barkTile: 0.4 }));
-  const tint = [0.9 + r() * 0.2, 0.98 + r() * 0.1, 0.72 + r() * 0.25];
+  const dk = 0.6 + r() * 0.3;
+  const tint = [(0.9 + r() * 0.2) * dk, (0.98 + r() * 0.1) * dk, (0.72 + r() * 0.25) * dk];
   const real = out.realNear && nearViewer(x, z);
   const br = sprout(stem, { count: 5 + H * 3.4, t0: 0.2, t1: 0.97, angle: [50, 80], len: (t) => (0.4 + H * 0.2) * (1 - 0.55 * t), rRatio: 0.5, rTip: 0.003, up: 0.02, droop: 0.1, planar: false, wiggle: 0.16, segs: 3, flex: 0.05 }, r);
   for (const b of br) {
@@ -564,8 +565,8 @@ function shrub(x, z, r, out) {
 export function createTrees(quality) {
   const hi = quality !== 'low';
   const r = rng(1234);
-  const heroL = { geos: [], twigs: [], leaves: new Instances(), twigDensity: hi ? 1 : 0.45 };
-  const heroR = { geos: [], twigs: [], leaves: new Instances(), twigDensity: hi ? 1 : 0.45 };
+  const heroL = { geos: [], twigs: [], leaves: new Instances(), twigDensity: hi ? 1 : 0.45, rootGeos: [] };
+  const heroR = { geos: [], twigs: [], leaves: new Instances(), twigDensity: hi ? 1 : 0.45, rootGeos: [] };
   heroLeft(heroL, r);
   heroRight(heroR, r);
 
@@ -593,25 +594,38 @@ export function createTrees(quality) {
     placed.push({ x, z }); nNear++;
     forestTree(x, z, r, forest, Math.hypot(x + 1, z + 3) < (hi ? 30 : 20) ? 'near' : 'mid');
   }
+  // Big trees on both banks upstream lean together over the water and close the canopy above the river.
+  for (let i = 0; i < (hi ? 13 : 8); i++) {
+    for (let t2 = 0; t2 < 30; t2++) {
+      const z = -19 - r() * 36, side = i % 2 ? 1 : -1;
+      let x0 = 0; { let best = 1e9; for (let xx = -14; xx <= 14; xx += 0.5) { const d = Math.abs(river(xx, z).d); if (d < best) { best = d; x0 = xx; } } }
+      const x = x0 + side * (river(x0, z).w + 2.2 + r() * 2.5);
+      if (bankE(x, z) < 0.9 || tooClose(x, z, 3.2)) continue;
+      placed.push({ x, z }); nNear++;
+      forestTree(x, z, r, forest, z > -30 ? 'near' : 'mid', 'old');
+      break;
+    }
+  }
   // Far ring: cheaper trees (bough cards only) that close the view and carry the atmospheric depth.
   let nFar = 0; tries = 0;
-  const farTarget = hi ? 170 : 90;
+  const farTarget = hi ? 380 : 170;
   while (nFar < farTarget && tries++ < 9000) {
-    const ang = r() * 6.283, rad = 50 + Math.pow(r(), 0.8) * 75;
+    const ang = r() * 6.283, rad = 50 + Math.pow(r(), 0.8) * 130;
     const x = -1 + Math.cos(ang) * rad, z = -3 + Math.sin(ang) * rad;
-    if (bankE(x, z) < 1.5 || tooClose(x, z, 5.5)) continue;
+    if (bankE(x, z) < 1.5 || tooClose(x, z, 5.0)) continue;
     placed.push({ x, z }); nFar++;
     forestTree(x, z, r, forest, 'far');
   }
   // Understory.
   let nSap = 0; tries = 0;
-  const sapTarget = hi ? 130 : 60;
+  const sapTarget = hi ? 95 : 45;
   const saps = [];
   while (nSap < sapTarget && tries++ < 9000) {
     const ang = r() * 6.283, rad = 3 + Math.pow(r(), 0.9) * 40;
     const x = -1 + Math.cos(ang) * rad, z = -3 + Math.sin(ang) * rad;
     if (!okGround(x, z, 0.5) || saps.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < 1.6) || tooClose(x, z, 0.9)) continue;
     if (fbm(x * 0.09, z * 0.09, 2, 40) < -0.08) continue;      // saplings come in thickets
+    if (bankE(x, z) < 3.5 && r() < 0.75) continue;             // not a hedge along the water
     if (x > -2.4 && x < 3.4 && z > 0.5 && z < 9.5) continue;   // keep the view down the trail to the water open
     if (Math.hypot(x + 2.3, z - 5.0) < 4.2) continue;          // and the view up into the old tree's crown
     saps.push({ x, z }); nSap++;
@@ -648,7 +662,7 @@ export function createTrees(quality) {
   addWood([...heroL.twigs, ...heroR.twigs], barkHero, { shadow: false, reflect: false });
   addWood(forest.geos, barkForest);
   // washed-out bank roots: bare, dark, wet wood rather than mossy
-  addWood(forest.roots, barkMaterial('japanese_hackberry_bark', { tint: [0.9, 0.85, 0.78], desat: 0.3, moss: 0.12, lichen: 0, normal: 1.6, mossHeight: 0.5 }));
+  addWood([...forest.roots, ...heroR.rootGeos], barkMaterial('japanese_hackberry_bark', { tint: [0.9, 0.85, 0.78], desat: 0.3, moss: 0.12, lichen: 0, normal: 1.6, mossHeight: 0.5 }));
   addWood(forest.small, barkForest, { shadow: false, reflect: false });
 
   const leafGeo = leafGeometry();

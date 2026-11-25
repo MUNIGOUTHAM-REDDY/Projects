@@ -110,30 +110,40 @@ export function createFallingLeaves(quality) {
     }
     mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true;
   }
-  let simT = 0;
-  mesh.userData.update = (dt, time, jump) => {
-    if (jump) {
-      // still frames: run the simulation forward so the capture shows leaves mid-fall and afloat
-      const total = 40 + time, h = 1 / 30;
-      for (let t = 0; t < total; t += h) for (const o of L) step(o, h, t - 40);
-      // a few leaves caught mid-fall where people stand: on the trail, over the landing, under the old tree
-      const spots = [[0.75, 2.25, 6.3], [-0.55, 2.9, 5.2], [1.3, 1.5, 4.4], [1.0, 1.05, -0.4], [0.2, 1.5, -2.0], [1.9, 0.8, -1.6], [-2.0, 3.0, 5.0], [-2.7, 4.2, 4.2], [-3.9, 2.0, -8.2]];
-      spots.forEach((sp, i) => {
-        const o = L[i];
-        o.x = sp[0]; o.y = sp[1]; o.z = sp[2]; o.mode = 0; o.fade = 1; o.tumble = i % 3 === 1; o.size = 0.095 + 0.01 * (i % 3);
-        o.age = 0.4 + i * 0.37;
-        step(o, 0.001, time);
-        // caught side-on to the viewer, mid-swing, so the blade reads as a leaf rather than a sliver
-        qa.setFromAxisAngle(ax.set(0, 1, 0), 0.6 + i * 1.3);
-        qb.setFromAxisAngle(ax.set(1, 0, 0), -0.55 - 0.25 * (i % 3));
-        o.q.copy(qa).multiply(qb);
-        qb.setFromAxisAngle(ax.set(0, 1, 0), 0.5 * (i % 2 ? 1 : -1));
-        o.q.multiply(qb);
-      });
-    } else {
-      simT += dt;
-      for (const o of L) step(o, dt, time);
+  // The first few leaves belong to the viewer: they always fall somewhere in the 3-15 m ahead of the camera,
+  // and are re-dropped upwind and overhead when they have landed or been left behind.
+  const LOCAL = quality === 'low' ? 8 : 12;
+  const fwd = new THREE.Vector3();
+  function respawnLocal(o, cam, target, fresh) {
+    spawn(o, fresh);
+    fwd.subVectors(target, cam.position); fwd.y = 0;
+    if (fwd.lengthSq() < 1e-4) fwd.set(0, 0, -1);
+    fwd.normalize();
+    const d = 3 + r() * 12, lat = (r() - 0.5) * d * 0.9;
+    o.x = cam.position.x + fwd.x * d - fwd.z * lat - 0.6;      // a little upwind: they drift back into view
+    o.z = cam.position.z + fwd.z * d + fwd.x * lat - 0.3;
+    const ground = Math.max(heightAt(o.x, o.z), WATER_Y);
+    o.y = Math.max(ground + 2.5, cam.position.y + 1.2) + r() * (fresh ? 3.5 : 0) - (fresh ? 0 : r() * 2.2);
+    o.amp = 0.6 + r() * 0.5; o.size = 0.085 + r() * 0.02;
+    o.local = true; o.linger = 1.5 + r() * 3.5;
+  }
+  function stepAll(dt, time, cam, target) {
+    for (let i = 0; i < N; i++) {
+      const o = L[i];
+      step(o, dt, time);
+      if (i < LOCAL && cam) {
+        const dx = o.x - cam.position.x, dz = o.z - cam.position.z;
+        if (!o.local || dx * dx + dz * dz > 24 * 24 || (o.mode !== 0 && o.rest > o.linger)) respawnLocal(o, cam, target, !!o.local);
+      }
     }
+  }
+  mesh.userData.update = (dt, time, jump, cam, target) => {
+    if (jump) {
+      // advance the same simulation from a fixed seed, so a still frame (or the first live frame) already
+      // has leaves in the air, on the ground and afloat
+      const total = 40 + time, h = 1 / 30;
+      for (let t = 0; t < total; t += h) stepAll(h, t - 40, cam, target);
+    } else stepAll(dt, time, cam, target);
     write();
   };
   write();

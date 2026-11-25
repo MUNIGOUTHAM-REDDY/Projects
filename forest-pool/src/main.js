@@ -220,7 +220,7 @@ if (STILL) {
     focus = fc || -1;
   }
 }
-falling.userData.update(0, STILL ? G.uTime.value : 0, true);
+falling.userData.update(0, STILL ? G.uTime.value : 0, true, camera, controls.target);
 
 const clock = new THREE.Clock();
 function renderFrame(dt) {
@@ -238,7 +238,7 @@ function renderFrame(dt) {
   walk(dt);
   controls.update(dt);
   keepAboveGround();
-  if (!STILL) falling.userData.update(dt, G.uTime.value, false);
+  if (!STILL) falling.userData.update(dt, G.uTime.value, false, camera, controls.target);
   const cu = pipeline.scenePass.compMat.uniforms;
   // Presets carry a focus distance; when exploring freely, focus on the orbit target and ease the blur off.
   const want = focus > 0 ? focus : camera.position.distanceTo(controls.target);

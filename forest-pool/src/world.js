@@ -39,7 +39,7 @@ export function rng(seed) {
 // --- River centreline -------------------------------------------------------
 // x, z, half-width, mid-channel depth. Listed upstream -> downstream.
 const CTRL = [
-  [16, -120, 3.0, 0.5], [13, -92, 3.0, 0.6], [8, -68, 3.0, 0.5], [5.5, -50, 3.2, 0.8], [-1.5, -35, 3.2, 0.5],
+  [16, -120, 3.0, 0.5], [13, -92, 3.0, 0.6], [10, -70, 3.0, 0.5], [3, -53, 3.2, 0.8], [-6.5, -38, 3.2, 0.5],
   [3.4, -23.5, 3.6, 1.2], [2.9, -14, 3.6, 0.3], [1.2, -7.0, 4.0, 0.34], [-3.2, -1.9, 4.5, 1.8],
   [-10.5, 0.4, 3.9, 1.2], [-20, 0.6, 3.3, 0.45], [-31, 5, 3.3, 0.9], [-48, 3, 3.0, 0.6], [-72, 8, 3.0, 0.6], [-110, 5, 3.0, 0.6],
 ];
@@ -214,7 +214,8 @@ export function heightAt(x, z) {
     h += inland * (0.22 * fbm(x * 0.11, z * 0.11, 3, 1) + 0.07 * fbm(x * 0.45, z * 0.45, 2, 3));
     h += 0.035 * fbm(x * 1.6, z * 1.6, 2, 5) * smoothstep(0, 1, e);
     // The valley sides rise slowly away from the water, then roll.
-    h += 0.045 * Math.max(0, e - 3) * (1 - 0.5 * smoothstep(10, 60, e)) + smoothstep(18, 60, e) * 1.6 * fbm(x * 0.035, z * 0.035, 3, 5);
+    h += 0.045 * Math.max(0, e - 3) * (1 - 0.5 * smoothstep(10, 60, e)) + smoothstep(18, 60, e) * 1.6 * fbm(x * 0.035, z * 0.035, 3, 5)
+      + smoothstep(28, 130, e) * 15 * (0.75 + 0.9 * fbm(x * 0.011, z * 0.011, 2, 23));   // wooded hillsides close the valley
     h -= 0.07 * pathMask(x, z) * smoothstep(0.2, 1.5, e);
   } else {
     const m = -e;

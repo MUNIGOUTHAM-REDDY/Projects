@@ -63,7 +63,7 @@ export function createTerrain(quality, splat) {
         float big = vnoise(vUW.xz * 0.11);
         float mid = vnoise(vUW.xz * 0.6 + 7.0);
         float fine = vnoise(vUW.xz * 3.1 + 2.0);
-        sp = mix(vec4(0.0, 0.35 + 0.5 * big, 0.4 + 0.5 * mid, 1.0), sp, inS);
+        sp = mix(vec4(0.0, 0.35 + 0.5 * big, 0.4 + 0.5 * mid, 0.5), sp, inS);   // far ground lies in forest shade
         vec2 uv = vUW.xz;
         float tn = smoothstep(0.3, 0.7, vnoise(vUW.xz * 0.23 + 3.0));
         vec3 cG = tri(tGround, uv * 0.36, tn).rgb;
@@ -113,11 +113,13 @@ export function createTerrain(quality, splat) {
         col = mix(col, bank, nearW * (1.0 - 0.6 * moss * smoothstep(0.1, 0.3, y)));
         nrm = mix(nrm, mix(nP, nD, steep), nearW);
         // steep bank faces are textured from the side (no vertical smearing): raw earth with stones in it
-        vec3 an = abs(normalize(vTN));
-        vec2 suvv = an.x > an.z ? vec2(vUW.z, vUW.y) : vec2(vUW.x, vUW.y);
-        vec3 cSide = mix(texture2D(tMud, suvv * 0.55).rgb, texture2D(tPeb, suvv * 0.4).rgb * 0.8, 0.3 + 0.3 * mid);
-        vec3 nSide = texture2D(nPeb, suvv * 0.4).xyz;
-        float cut = smoothstep(0.3, 0.6, slope);
+        vec3 an = pow(abs(normalize(vTN)), vec3(6.0));
+        float wx = an.x / max(an.x + an.z, 1e-4), wz = 1.0 - wx;
+        vec3 sideM = texture2D(tMud, vUW.zy * 0.55).rgb * wx + texture2D(tMud, vUW.xy * 0.55).rgb * wz;
+        vec3 sideP = texture2D(tPeb, vUW.zy * 0.4).rgb * wx + texture2D(tPeb, vUW.xy * 0.4).rgb * wz;
+        vec3 cSide = mix(sideM, sideP * 0.8, 0.3 + 0.3 * mid);
+        vec3 nSide = texture2D(nPeb, vUW.zy * 0.4).xyz * wx + texture2D(nPeb, vUW.xy * 0.4).xyz * wz;
+        float cut = smoothstep(0.16, 0.42, slope);
         col = mix(col, cSide * vec3(0.6, 0.52, 0.42) * (0.6 + 0.6 * smoothstep(-0.1, 0.5, y)), cut * 0.92);
         nrm = mix(nrm, nSide, cut);
 
@@ -130,8 +132,8 @@ export function createTerrain(quality, splat) {
         float silt = smoothstep(0.42, 0.66, vnoise(vUW.xz * 0.33 + 21.0) * 0.65 + vnoise(vUW.xz * 1.1 + 5.0) * 0.35);
         bedCol = mix(bedCol, cS * vec3(0.95, 0.92, 0.8) * (0.7 + 0.5 * vnoise(vUW.xz * 2.7)), silt * 0.75);
         bedCol *= 0.75 + 0.5 * vnoise(vUW.xz * 0.9 + 40.0);
-        col = mix(col, bedCol, bed);
-        nrm = mix(nrm, nP, bed);
+        col = mix(col, bedCol, bed * (1.0 - 0.85 * cut));
+        nrm = mix(nrm, nP, bed * (1.0 - cut));
 
         // contact shade under rocks, trunks and plants; distant ground falls into forest shade
         col *= mix(0.42, 1.0, sp.a);
