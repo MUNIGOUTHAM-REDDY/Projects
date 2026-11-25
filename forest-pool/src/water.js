@@ -27,7 +27,7 @@ const WaterShader = {
       // standing waves and haystacks where the stream breaks over ledges and round boulders: real geometry, a few centimetres high
       vec4 bk = texture2D(tBake, (w0.xz - uBake.xy) * uBake.z);
       float k = clamp(bk.a, 0.0, 1.0) * smoothstep(0.3, 1.0, length(bk.gb)) * smoothstep(0.04, 0.22, -bk.r);
-      pos.z += k * (0.035 * sin(aSD.y * 3.6 + sin(aSD.x * 2.3) * 1.5) + 0.02 * sin(aSD.x * 5.1 + aSD.y * 1.7 + uTime * 0.6) + 0.012);
+      pos.z += k * (0.075 * sin(aSD.y * 3.6 + sin(aSD.x * 2.3) * 1.5) + 0.025 * sin(aSD.x * 5.1 + aSD.y * 1.7 + uTime * 0.6) + 0.02);
       vW = (modelMatrix * vec4(pos, 1.0)).xyz;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
     }`,
@@ -144,6 +144,9 @@ const WaterShader = {
       float th = max(0.46, 1.1 - fk * 0.7);
       th = max(th, 0.52);
       float foam = smoothstep(th, th + 0.35, lace + fk * 0.1) * (0.35 + 0.65 * ft2.g) * (0.4 + 0.6 * ft.b) * smoothstep(0.02, 0.3, fk);
+      // white caps break on the crests of the standing waves
+      float crest = sin(q.y * 3.6 + sin(q.x * 2.3) * 1.5);
+      foam += smoothstep(0.45, 0.95, crest) * clamp(foamK, 0.0, 1.0) * smoothstep(0.3, 1.0, speed) * (0.35 + 0.65 * ft2.r) * 0.9;
       foam *= smoothstep(0.03, 0.16, depth);               // no foam film over bare gravel
       // a thin lapping edge along the shore
       float shore = smoothstep(0.06, 0.015, depth) * smoothstep(0.0, 0.015, depth) * ft2.g * ft.r * 0.6;

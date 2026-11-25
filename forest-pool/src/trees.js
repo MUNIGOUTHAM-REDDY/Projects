@@ -472,12 +472,13 @@ function forestTree(x, z, r, out, kind, force = null) {
   const path = smoothPath(ctrl, far ? 0.5 : 1.3);
   const trunk = new Limb(path, R, R * 0.16, 0, 1.0, 0);
   const snag = type === 'snag';
-  trunk.radiusAt = (t) => (snag ? R * (1 - 0.35 * t) : R * (1 - 0.84 * Math.pow(t, 1.25)));
+  // a snag keeps its girth and ends in a splintered break
+  trunk.radiusAt = (t) => (snag ? R * (1 - 0.3 * t) * (1 - 0.8 * smoothstep(0.9, 1.0, t)) : R * (1 - 0.84 * Math.pow(t, 1.25)));
   trunk.swayAt = (t) => (snag ? 0 : (type === 'young' ? 1.4 : 1.0) * Math.pow(Math.max(0, t - 0.1), 2.3));
   // every trunk its own shade of grey: some weathered pale, some dark and wet-looking, a few green with algae
   const bv = snag ? 1.0 : 0.72 + r() * 0.4, bh = r();
   const tintV = [bv * (0.96 + bh * 0.08), bv * (0.98 + (1 - bh) * 0.06), bv * (0.9 + bh * 0.1)];
-  (snag ? out.snags : out.geos).push(tube(trunk, { radial: far ? 7 : type === 'young' ? 9 : 14, flare: far ? 0 : type === 'old' ? 1.6 : 1.15, flareLobes: 4 + Math.floor(r() * 3), flareH: 0.45 + R * 0.9, seed: r() * 10, lumps: far ? 0 : snag ? 0.12 : 0.06, knots: far || type === 'young' ? null : addKnots(r, Math.min(8, H * 0.4), 5, R), barkTile: 1.3, ground: y0, tintV }));
+  (snag ? out.snags : out.geos).push(tube(trunk, { radial: far ? 7 : type === 'young' ? 9 : 14, flare: far ? 0 : type === 'old' ? 1.6 : 1.15, flareLobes: 4 + Math.floor(r() * 3), flareH: 0.45 + R * 0.9, seed: r() * 10, lumps: far ? 0 : snag ? 0.2 : 0.06, knots: far || type === 'young' ? null : addKnots(r, Math.min(8, H * 0.4), 5, R), barkTile: 1.3, ground: y0, tintV }));
   out.contacts.push({ x, z, r: R * 2.6, dark: 0.5, moss: 0.6 });
   // roots exposed where the bank has been washed out from under the tree
   if (!far && e < 3.4 && type !== 'young') {
@@ -486,7 +487,7 @@ function forestTree(x, z, r, out, kind, force = null) {
   }
   if (snag) {
     // broken stubs and one or two dead limbs
-    const stubs = sprout(trunk, { count: 4, t0: 0.35, t1: 0.98, angle: [50, 85], len: () => 0.5 + r() * 1.6, rRatio: 0.4, rTip: 0.02, planar: false, wiggle: 0.3, segs: 3, droop: 0.15 }, r);
+    const stubs = sprout(trunk, { count: 7, t0: 0.3, t1: 0.98, angle: [50, 85], len: () => 0.5 + r() * 1.6, rRatio: 0.4, rTip: 0.02, planar: false, wiggle: 0.3, segs: 3, droop: 0.15 }, r);
     for (const b of stubs) out.snags.push(tube(b, { radial: 5, collar: 0.5, barkTile: 0.7, tintV }));
     return;
   }
@@ -496,7 +497,7 @@ function forestTree(x, z, r, out, kind, force = null) {
   const tint = [(0.86 + r() * 0.3) * pal[0] * pv, (0.94 + r() * 0.14) * pal[1] * pv, (0.72 + r() * 0.4) * pal[2] * pv];
   // a second, darker species with feathery compound leaves, about a quarter of the stand
   const sp2 = !far && ph < 0.26;
-  if (sp2) { tint[0] = 0.8 * pv; tint[1] = 0.84 * pv; tint[2] = 0.8 * pv; }
+  if (sp2) { tint[0] = 0.68 * pv; tint[1] = 0.76 * pv; tint[2] = 0.7 * pv; }
   { const c = path.at(0.78); out.crowns.push({ x: c.x, z: c.z, r: Math.max(3, (type === 'young' ? 4.4 * 0.9 : type === 'old' ? 8.5 * H / 26 : 7.0 * H / 26) * 0.95) }); }
   const crown0 = type === 'young' ? 0.25 + r() * 0.2 : type === 'old' ? 0.3 + r() * 0.12 : 0.34 + r() * 0.26;
   const lenBase = (type === 'young' ? 4.4 : type === 'old' ? 8.5 : 7.0) * (H / 26) * (type === 'young' ? 26 / H * 0.9 : 1);
@@ -587,6 +588,8 @@ export function createTrees(quality) {
     if (pathDist(x, z) < 1.9) return false;
     if (Math.hypot(x - 0.2, z - 8.6) < 3.2) return false;        // the viewer's spot on the trail
     if (ROCKS.some((k) => Math.hypot(k.x - x, k.z - z) < k.r + 0.5)) return false;
+    if (Math.hypot(x + 5.0, z + 6.5) < 3.2) return false;
+    { const t = clamp(((x + 6.5) * -4.5 + (z + 6) * -4.5) / 40.5, 0, 1); if (Math.hypot(x + 6.5 + 4.5 * t, z + 6 + 4.5 * t) < 2.4) return false; }   // no trunk wall at the left edge of the water's-edge view        // room around the far-bank viewpoint (also the left edge of the water's-edge view)
     // a gap in the canopy up-sun of the trail's end, so a pool of sunlight reaches the path
     const sx = G.uSunDir.value.x, sz = G.uSunDir.value.z, sl = Math.hypot(sx, sz);
     const t = clamp(((x - 0.3) * sx + (z - 6.2) * sz) / sl, 8, 19);
@@ -627,7 +630,7 @@ export function createTrees(quality) {
     }
   }
   // Two bleached dead trunks stand where the main views can see them.
-  for (const [sx0, sz0] of [[-7.0, -10.0], [7.6, -13.0]]) {
+  for (const [sx0, sz0] of [[-9.5, -14.0], [7.6, -13.0]]) {
     let x = sx0, z = sz0;
     for (let k = 0; k < 40 && bankE(x, z) < 1.2; k++) { const rv = river(x, z), sg = Math.sign(rv.d) || 1; x += -rv.tz * sg * 0.4; z += rv.tx * sg * 0.4; }
     placed.push({ x, z });
@@ -689,7 +692,7 @@ export function createTrees(quality) {
   addWood([...heroL.twigs, ...heroR.twigs], barkHero, { shadow: false, reflect: false });
   addWood(forest.geos, barkForest);
   // dead standing trunks: bark gone, wood bleached silver-grey
-  addWood(forest.snags, barkMaterial('japanese_hackberry_bark', { tint: [2.3, 2.2, 2.0], desat: 0.8, moss: 0.3, lichen: 0, normal: 1.0, mossHeight: 0.8 }));
+  addWood(forest.snags, barkMaterial('tree_bark_03', { tint: [1.25, 1.2, 1.1], desat: 0.85, moss: 0.55, lichen: 0, normal: 2.2, mossHeight: 1.6 }));
   // washed-out bank roots: bare, dark, wet wood rather than mossy
   addWood([...forest.roots, ...heroR.rootGeos], barkMaterial('japanese_hackberry_bark', { tint: [0.9, 0.85, 0.78], desat: 0.3, moss: 0.12, lichen: 0, normal: 1.6, mossHeight: 0.5 }));
   addWood(forest.small, barkForest, { shadow: false, reflect: false });

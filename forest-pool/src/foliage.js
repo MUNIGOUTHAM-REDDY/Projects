@@ -232,13 +232,13 @@ export function litterMaterials() {
   if (litterMats) return litterMats;
   const map = tex(A('leaf_atlas.webp'), { repeat: false });
   const nrm = tex(A('leaf_atlas_n.jpg'), { srgb: false, repeat: false });
-  const mat = new THREE.MeshStandardMaterial({ map, normalMap: nrm, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.8, metalness: 0, envMapIntensity: 0.35 });
+  const mat = new THREE.MeshStandardMaterial({ map, normalMap: nrm, normalScale: new THREE.Vector2(0.45, 0.45), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.8, metalness: 0, envMapIntensity: 0.35 });
   underwater(mat, { wet: false });
   atlasPatch(mat, 4, 1, 'm');
   // dead leaves: keep the veins and blotches, lose the chlorophyll; the instance colour supplies the hue
   chain(mat, 'dry', (s) => {
     s.fragmentShader = s.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
-      diffuseColor.rgb = vec3(min(pow(dot(diffuseColor.rgb, vec3(0.4, 0.5, 0.1)) * 9.0, 1.5), 1.1));`);
+      diffuseColor.rgb = vec3(0.62 + 0.5 * clamp(dot(diffuseColor.rgb, vec3(0.4, 0.5, 0.1)) * 8.0, 0.0, 1.0));`);
   });
   foliageShading(mat, { card: false, dry: true });
   return (litterMats = { mat, depth: null });

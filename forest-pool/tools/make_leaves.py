@@ -115,16 +115,17 @@ def bleed(rgba, iters=24):
 
 # Scanned leaves (Poly Haven island_tree_01 / jacaranda_tree, CC0): cut each leaf out of its atlas, stand it
 # tip-up in a 1:2 cell with the blade base at LEAF_V0, and pull the colour toward a deep olive-green.
-SRC = '/tmp/claude-0/ph/dl/leaf2/'
+import os
+SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src') + '/'
 def as8(im):
     a = np.array(im)
     if a.dtype != np.uint8: a = (a.astype(np.float32) / 257).clip(0, 255).astype(np.uint8)
     return a
 def scanned(name, target, min_area, horizontal=False, W=256, H=512):
-    col = as8(Image.open(f'{SRC}{name}_leaves_diff_2k.png').convert('RGB'))
-    al = as8(Image.open(f'{SRC}{name}_leaves_alpha_2k.png'))
+    col = as8(Image.open(f'{SRC}{name}_leaves_diff_2k.jpg').convert('RGB'))
+    al = as8(Image.open(f'{SRC}{name}_leaves_alpha_2k.jpg'))
     if al.ndim == 3: al = al[..., 0]
-    nr = as8(Image.open(f'{SRC}{name}_leaves_nor_gl_2k.png').convert('RGB'))
+    nr = as8(Image.open(f'{SRC}{name}_leaves_nor_gl_2k.jpg').convert('RGB'))
     lab, n = ndimage.label(al > 128)
     out = []
     objs = ndimage.find_objects(lab)

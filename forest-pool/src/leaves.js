@@ -16,7 +16,7 @@ export function createFallingLeaves(quality) {
   mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(N * 3), 3);
   const r = rng(909);
   const L = [];
-  const tints = [[0.36, 0.25, 0.06], [0.26, 0.15, 0.06], [0.3, 0.3, 0.07], [0.27, 0.11, 0.045], [0.17, 0.25, 0.06]];
+  const tints = [[0.62, 0.4, 0.09], [0.5, 0.24, 0.07], [0.56, 0.46, 0.1], [0.52, 0.17, 0.05], [0.3, 0.4, 0.09]];
   const spawn = (o, fresh) => {
     // drop zones: under the two hero crowns and along the river corridor in front of the trail
     // the river corridor and, more thickly, the places people stand and look
@@ -104,7 +104,7 @@ export function createFallingLeaves(quality) {
       // afloat: wet and curled, lying low so the edges dip under the surface
       const fl = o.mode === 2;
       m.compose(p.set(o.x, o.y - (fl ? 0.006 : 0), o.z), o.q, s.set(sc * (fl ? 0.85 : 1), sc * (fl ? 0.85 : 1), sc * (fl ? 2.2 : 1.9)));
-      const t = tints[i % tints.length], v = o.v * (fl ? 0.6 : 1);
+      const t = tints[i % tints.length], v = o.v * (fl ? 0.72 : 1);
       mesh.instanceColor.setXYZ(i, t[0] * v, t[1] * v, t[2] * v);
       mesh.setMatrixAt(i, m);
     }

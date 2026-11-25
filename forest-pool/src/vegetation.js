@@ -227,7 +227,8 @@ export function createGroundCover(quality) {
     m4.makeBasis(X.copy(side).multiplyScalar(sc * (mode >= 0.8 ? 0.55 + r() * 0.35 : 0.85 + r() * 0.3)), dir.multiplyScalar(sc), Z.copy(nrm).multiplyScalar(sc * curl)).setPosition(p);
     const t = r(), v = (0.5 + r() * 0.6) * (sunk ? 0.75 : 1);
     // weathered browns and greys, the odd paler or still-green leaf
-    const c = t < 0.4 ? [0.2, 0.125, 0.07] : t < 0.7 ? [0.15, 0.1, 0.065] : t < 0.88 ? [0.27, 0.2, 0.12] : t < 0.96 ? [0.34, 0.27, 0.13] : [0.17, 0.24, 0.07];
+    // tan, ochre, russet and weathered grey-brown; the odd leaf still green
+    const c = t < 0.34 ? [0.4, 0.27, 0.14] : t < 0.6 ? [0.3, 0.17, 0.085] : t < 0.8 ? [0.44, 0.34, 0.16] : t < 0.93 ? [0.24, 0.18, 0.12] : t < 0.97 ? [0.5, 0.4, 0.14] : [0.2, 0.28, 0.08];
     litter.add(m4, c[0] * v, c[1] * v, c[2] * v, 0, 0, Math.floor(r() * 4));
     n++;
   }
