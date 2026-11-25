@@ -579,6 +579,10 @@ export function createTrees(quality) {
     if (pathDist(x, z) < 1.9) return false;
     if (Math.hypot(x - 0.2, z - 8.6) < 3.2) return false;        // the viewer's spot on the trail
     if (ROCKS.some((k) => Math.hypot(k.x - x, k.z - z) < k.r + 0.5)) return false;
+    // a gap in the canopy up-sun of the trail's end, so a pool of sunlight reaches the path
+    const sx = G.uSunDir.value.x, sz = G.uSunDir.value.z, sl = Math.hypot(sx, sz);
+    const t = clamp(((x - 0.3) * sx + (z - 6.2) * sz) / sl, 7, 24);
+    if (Math.hypot(x - (0.3 + (sx / sl) * t), z - (6.2 + (sz / sl) * t)) < 5.5) return false;
     return true;
   };
   // Near and middle forest: full trees with twig sprays.
