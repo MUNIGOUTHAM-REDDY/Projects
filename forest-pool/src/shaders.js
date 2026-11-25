@@ -66,7 +66,7 @@ float canopyGap(vec3 w, vec3 sunDir){
   float a = vnoise(p * 0.085 + 1.7) * 0.6 + vnoise(p * 0.21 + 3.1) * 0.4;
   // a few deliberate openings: over the end of the trail, the pool and the riffle
   vec2 o = sunDir.xz / max(sunDir.y, 0.2) * 16.0;
-  a += 0.30 * exp(-dot(p - o - vec2(0.2, 5.6), p - o - vec2(0.2, 5.6)) / 14.0);
+  a += 0.5 * exp(-dot(p - o - vec2(0.3, 6.2), p - o - vec2(0.3, 6.2)) / 9.0);
   a += 0.26 * exp(-dot(p - o - vec2(-2.0, -1.0), p - o - vec2(-2.0, -1.0)) / 30.0);
   a += 0.24 * exp(-dot(p - o - vec2(2.5, -9.5), p - o - vec2(2.5, -9.5)) / 40.0);
   return smoothstep(0.39, 0.55, a);
