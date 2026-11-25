@@ -116,9 +116,11 @@ export function createRocks(quality) {
       // boulders in the stream must break the surface
       if (!rk.sub && bed < 0 && h * (1 - rk.sink) < -bed + 0.22) { const k = Math.min(1.7, (-bed + 0.22) / (h * (1 - rk.sink))); sc *= k; h *= k; }
       m.scale.setScalar(sc);
-      m.rotation.set((r() - 0.5) * 0.25, rk.rot, (r() - 0.5) * 0.25);
+      m.rotation.set((r() - 0.5) * 0.12, rk.rot, (r() - 0.5) * 0.12);
       // sunken boulders: tops a hand's breadth under the surface, showing as dark shapes with a boil above
-      const yBase = rk.sub ? Math.max(bed - h * 0.6, Math.min(bed - h * rk.sink, -(0.04 + r() * 0.12) - h)) : bed - h * rk.sink;
+      // boulders on the shallow ledges and bars are bedded deep in the cobbles, not perched on them
+      const sinkK = bed > -0.2 && rk.kind === 'r' ? Math.max(rk.sink, 0.45) : Math.max(rk.sink, rk.kind === 'r' ? 0.3 : rk.sink);
+      const yBase = rk.sub ? Math.max(bed - h * 0.6, Math.min(bed - h * rk.sink, -(0.04 + r() * 0.12) - h)) : bed - h * sinkK;
       m.position.set(rk.x, yBase, rk.z);
       m.castShadow = true; m.receiveShadow = true;
       group.add(m);
@@ -145,7 +147,7 @@ export function createRocks(quality) {
     const big = r();
     const size = 0.02 + Math.pow(big, 5) * 0.42 + Math.pow(r(), 2) * 0.06;
     e.set((r() - 0.5) * 0.5, r() * 6.283, (r() - 0.5) * 0.5); q.setFromEuler(e);
-    p.set(x, y - size * (0.2 + r() * 0.25), z); s.set(size * (0.8 + r() * 0.5), size * (0.7 + r() * 0.5), size * (0.8 + r() * 0.5));
+    p.set(x, y - size * (0.2 + r() * 0.3), z); s.set(size * (0.6 + r() * 1.1), size * (0.4 + r() * 0.7), size * (0.6 + r() * 0.8));
     m4.compose(p, q, s);
     const v = 0.6 + r() * 0.55, w = r();
     per[n % 3].push({ m: m4.clone(), c: [v * (0.95 + w * 0.12), v * (0.93 + w * 0.06), v * (0.86 - w * 0.06)] });
@@ -156,12 +158,13 @@ export function createRocks(quality) {
   for (let k = 0; k < nPath; k++) {
     const seg = Math.floor(r() * (PATH.length - 3)) + 2, f = r();
     const x = PATH[seg][0] + (PATH[seg + 1][0] - PATH[seg][0]) * f + (r() + r() - 1) * 0.75, z = PATH[seg][1] + (PATH[seg + 1][1] - PATH[seg][1]) * f + (r() - 0.5) * 0.4;
-    const size = 0.01 + Math.pow(r(), 3) * 0.05;
+    if (fbm(x * 1.1, z * 1.1, 2, 61) < -0.02) continue;          // gathered in the ruts, not sprinkled evenly
+    const size = 0.005 + Math.pow(r(), 4) * 0.02;
     e.set((r() - 0.5) * 0.5, r() * 6.283, (r() - 0.5) * 0.5); q.setFromEuler(e);
-    p.set(x, heightAt(x, z) - size * 0.3, z); s.set(size * (0.8 + r() * 0.5), size * (0.6 + r() * 0.4), size * (0.8 + r() * 0.5));
+    p.set(x, heightAt(x, z) - size * 0.45, z); s.set(size * (0.7 + r() * 0.9), size * (0.5 + r() * 0.4), size * (0.7 + r() * 0.7));
     m4.compose(p, q, s);
-    const v = 0.55 + r() * 0.5;
-    per[k % 3].push({ m: m4.clone(), c: [v, v * 0.96, v * 0.88] });
+    const v = 0.85 + r() * 0.5;
+    per[k % 3].push({ m: m4.clone(), c: [v, v * 0.94, v * 0.82] });
   }
   per.forEach((list, i) => {
     const inst = new THREE.InstancedMesh(geos[i], mat, list.length);

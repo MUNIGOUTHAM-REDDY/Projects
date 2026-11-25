@@ -28,7 +28,7 @@ const SS = Number(params.get('ss') || 0);
 renderer.setPixelRatio(SS || Math.min(devicePixelRatio, quality === 'low' ? 1.25 : 1.75));
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = Number(params.get('exp') || 1.2);
+renderer.toneMappingExposure = Number(params.get('exp') || 1.1);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 setAnisotropy(Math.min(8, renderer.capabilities.getMaxAnisotropy()));

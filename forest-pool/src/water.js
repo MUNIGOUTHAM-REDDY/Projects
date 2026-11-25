@@ -85,18 +85,21 @@ const WaterShader = {
       vec2 q = vSD;
 
       // long glassy swells, finer chop where the water runs fast and shallow, a breath of wind
-      vec3 n1 = flowNormal(q, fl, vec2(0.5, 0.085), 3.0, 0.0);
-      vec3 n2 = flowNormal(q, fl, vec2(1.5, 0.36), 1.9, 0.3);
-      vec3 n4 = flowNormal(q, fl, vec2(3.4, 0.8), 1.1, 0.6);
+      fl = fl * min(1.0, 0.9 / max(length(fl), 1e-3));        // cap the shear so fast water does not smear
+      vec3 n1 = flowNormal(q, fl, vec2(0.5, 0.17), 2.2, 0.0);
+      vec3 n2 = flowNormal(q, fl, vec2(1.5, 0.6), 1.5, 0.3);
+      vec3 n4 = flowNormal(q, fl, vec2(3.4, 1.3), 0.9, 0.6);
       vec3 n3 = texture2D(tWaterN, p * 0.19 + uTime * vec2(0.013, 0.009)).xyz * 2.0 - 1.0;
       float fast = smoothstep(0.15, 1.15, speed);
       float chop = 0.17 + 0.6 * fast + 0.6 * clamp(foamK, 0.0, 1.0);
       chop *= smoothstep(0.0, 0.08, depth) * 0.75 + 0.25;
       // pools carry only a slow swell; chop belongs to the riffles
       vec2 nq = (n1.xy * 1.0 + n2.xy * (0.12 + 0.5 * fast) + n4.xy * (0.3 * fast * fast)) * chop;
-      nq.y *= 0.3;                                          // crests run with the flow: long streaks, hardly any slope along it
+      nq.y *= 0.5;                                          // crests run with the flow
+      // standing waves: stationary crests across the current below rocks and ledges
+      nq.y += sin(q.y * 7.0 + sin(q.x * 2.3) * 1.5) * clamp(foamK, 0.0, 1.0) * 0.22 * smoothstep(0.3, 1.0, speed);
       vec2 nxy = Nl * nq.x + T * nq.y + n3.xy * 0.03;
-      nxy *= 1.0 / (1.0 + dist * 0.03);                    // tame sparkle aliasing far away
+      nxy *= 1.0 / (1.0 + dist * 0.045);                    // tame sparkle aliasing far away
       vec3 n = normalize(vec3(nxy.x, 1.0, nxy.y));
 
       float cosT = clamp(dot(V, n), 0.0, 1.0);
@@ -129,12 +132,14 @@ const WaterShader = {
       float fk = clamp(foamK, 0.0, 1.2);
       // never a solid sheet: even the heaviest white water stays broken into lace and streaks
       float th = max(0.46, 1.1 - fk * 0.7);
-      float foam = smoothstep(th, th + 0.3, lace + fk * 0.12) * (0.55 + 0.45 * ft2.g) * smoothstep(0.02, 0.3, fk);
+      th = max(th, 0.52);
+      float foam = smoothstep(th, th + 0.35, lace + fk * 0.1) * (0.35 + 0.65 * ft2.g) * (0.4 + 0.6 * ft.b) * smoothstep(0.02, 0.3, fk);
+      foam *= smoothstep(0.03, 0.16, depth);               // no foam film over bare gravel
       // a thin lapping edge along the shore
-      float shore = smoothstep(0.055, 0.0, depth) * smoothstep(-0.03, 0.0, depth) * (0.35 + 0.65 * ft2.g) * 0.5;
-      foam = clamp((foam + threads * 0.6) * smoothstep(0.0, 0.03, depth) + shore, 0.0, 1.0);
+      float shore = smoothstep(0.06, 0.015, depth) * smoothstep(0.0, 0.015, depth) * ft2.g * ft.r * 0.6;
+      foam = clamp(foam + threads * 0.6 * smoothstep(0.03, 0.16, depth) + shore, 0.0, 0.7);
       vec3 foamCol = vec3(0.86, 0.9, 0.86) * (uSunColor * vis * 0.75 + vec3(0.2, 0.26, 0.2));
-      col = mix(col, foamCol, foam * 0.8);
+      col = mix(col, foamCol, foam);
 
       float alpha = smoothstep(-0.015, 0.03, depth);
       gl_FragColor = vec4(col, alpha);

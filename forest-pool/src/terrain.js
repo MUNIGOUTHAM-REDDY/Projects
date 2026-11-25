@@ -126,6 +126,10 @@ export function createTerrain(quality, splat) {
         float deep = smoothstep(-0.35, -1.3, y + (mid - 0.5) * 0.4);
         vec3 bedCol = mix(gravel * 1.05, mix(cS * vec3(1.05, 1.0, 0.9), cP2, 0.25), deep * 0.8);
         bedCol = mix(bedCol, bedCol * vec3(0.55, 0.62, 0.4), smoothstep(0.55, 0.8, vnoise(vUW.xz * 0.5 + 9.0)) * 0.5); // algae
+        // drifts of pale sand and darker silt between the cobbles break the repeat
+        float silt = smoothstep(0.42, 0.66, vnoise(vUW.xz * 0.33 + 21.0) * 0.65 + vnoise(vUW.xz * 1.1 + 5.0) * 0.35);
+        bedCol = mix(bedCol, cS * vec3(0.95, 0.92, 0.8) * (0.7 + 0.5 * vnoise(vUW.xz * 2.7)), silt * 0.75);
+        bedCol *= 0.75 + 0.5 * vnoise(vUW.xz * 0.9 + 40.0);
         col = mix(col, bedCol, bed);
         nrm = mix(nrm, nP, bed);
 

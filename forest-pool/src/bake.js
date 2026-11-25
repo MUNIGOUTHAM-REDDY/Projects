@@ -67,6 +67,20 @@ export function buildBake() {
       data[k + 3] = Math.min(1.5, data[k + 3] + sub * Math.min(1.3, us * 1.2) * (0.9 * collar + 0.85 * wakeEdge + 0.6 * lee * Math.exp(-along / (a * 6))));
     }
   }
+  // Smooth flow and foam: bilinear sampling of a field with texel-sized jumps shows as a grid in the ripples.
+  {
+    const tmp = new Float32Array(res * res);
+    for (const ch of [1, 2, 3]) {
+      for (let pass = 0; pass < (ch === 3 ? 1 : 3); pass++) {
+        for (let j = 1; j < res - 1; j++) for (let i = 1; i < res - 1; i++) {
+          const k = j * res + i;
+          const g = (o) => data[(k + o) * 4 + ch];
+          tmp[k] = (4 * g(0) + 2 * (g(-1) + g(1) + g(-res) + g(res)) + g(-res - 1) + g(-res + 1) + g(res - 1) + g(res + 1)) / 16;
+        }
+        for (let j = 1; j < res - 1; j++) for (let i = 1; i < res - 1; i++) data[(j * res + i) * 4 + ch] = tmp[j * res + i];
+      }
+    }
+  }
   BAKE.data = data;
   const half = new Uint16Array(data.length);
   for (let i = 0; i < data.length; i++) half[i] = THREE.DataUtils.toHalfFloat(data[i]);

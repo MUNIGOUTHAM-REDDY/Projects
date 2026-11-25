@@ -116,6 +116,14 @@ export function createFallingLeaves(quality) {
       // still frames: run the simulation forward so the capture shows leaves mid-fall and afloat
       const total = 40 + time, h = 1 / 30;
       for (let t = 0; t < total; t += h) for (const o of L) step(o, h, t - 40);
+      // a few leaves caught mid-fall where people stand: on the trail, over the landing, under the old tree
+      const spots = [[0.75, 2.25, 6.3], [-0.55, 2.9, 5.2], [1.3, 1.5, 4.4], [1.0, 1.05, -0.4], [0.2, 1.5, -2.0], [1.9, 0.8, -1.6], [-2.0, 3.0, 5.0], [-2.7, 4.2, 4.2], [-3.9, 2.0, -8.2]];
+      spots.forEach((sp, i) => {
+        const o = L[i];
+        o.x = sp[0]; o.y = sp[1]; o.z = sp[2]; o.mode = 0; o.fade = 1; o.tumble = i % 3 === 1; o.size = 0.085 + 0.01 * (i % 3);
+        o.age = 0.4 + i * 0.37;
+        step(o, 0.001, time);
+      });
     } else {
       simT += dt;
       for (const o of L) step(o, dt, time);

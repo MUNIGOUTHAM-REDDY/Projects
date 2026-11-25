@@ -311,7 +311,7 @@ function roots(x, z, y0, r, geos, { count = 6, len = 2.2, rad = 0.11, seed = 0, 
       pts.push(V(px, Math.max(g, -0.25) + rr * (0.85 - 2.0 * f * f) + (k === 1 ? 0.12 : 0), pz));
     }
     const limb = new Limb(smoothPath(pts, 6), rad * (0.8 + r() * 0.5), 0.012, 0, 0, 1);
-    geos.push(tube(limb, { radial: heading === null ? 9 : 7, lumps: 0.07, seed: seed + i * 3.1, collar: 0.5, barkTile: 0.7, tintV }));
+    geos.push(tube(limb, { radial: heading === null ? 9 : 8, lumps: 0.07, seed: seed + i * 3.1, collar: 0.5, barkTile: 0.7, tintV }));
   }
 }
 
@@ -482,7 +482,7 @@ function forestTree(x, z, r, out, kind) {
   // roots exposed where the bank has been washed out from under the tree
   if (!far && e < 3.4 && type !== 'young') {
     const heading = Math.atan2(rv.tx * -Math.sign(rv.d), -rv.tz * -Math.sign(rv.d));
-    roots(x, z, y0, r, out.geos, { count: 3 + Math.floor(r() * 3), len: e + 1.6, rad: 0.05 + R * 0.16, seed: r() * 9, heading, spread: 0.7, tintV });
+    roots(x, z, y0, r, out.roots, { count: 2 + Math.floor(r() * 2), len: e + 1.6, rad: 0.06 + R * 0.2, seed: r() * 9, heading, spread: 0.6, tintV: [0.62, 0.58, 0.52] });
   }
   if (snag) {
     // broken stubs and one or two dead limbs
@@ -515,7 +515,7 @@ function leafyBranch(b, r, out, tint, shade) {
   for (const t of tw) { out.small.push(tube(t, { radial: 3, barkTile: 0.4 })); leafTwig(t, out.leaves, r, tint, { size: 0.074, shade }); }
   leafTwig(b, out.leaves, r, tint, { from: 0.4, size: 0.074, shade });
 }
-const nearViewer = (x, z) => Math.hypot(x - 0.3, z - 6.5) < 8.5 || Math.hypot(x - 0.8, z + 0.5) < 7;
+const nearViewer = (x, z) => Math.hypot(x - 0.3, z - 6.5) < 14 || Math.hypot(x - 0.8, z + 1.5) < 13 || Math.hypot(x + 5.4, z + 6.4) < 9;
 
 function sapling(x, z, r, out) {
   const y0 = heightAt(x, z);
@@ -569,7 +569,7 @@ export function createTrees(quality) {
   heroLeft(heroL, r);
   heroRight(heroR, r);
 
-  const forest = { geos: [], small: [], sprays: new Instances(), boughs: new Instances(), leaves: new Instances(), contacts: [], realNear: hi };
+  const forest = { geos: [], small: [], sprays: new Instances(), boughs: new Instances(), leaves: new Instances(), contacts: [], roots: [], realNear: hi };
   const placed = [{ x: HERO_TREES.left.x, z: HERO_TREES.left.z }, { x: HERO_TREES.right.x, z: HERO_TREES.right.z }];
   const tooClose = (x, z, d) => placed.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < d * d);
   const okGround = (x, z, margin) => {
@@ -613,6 +613,7 @@ export function createTrees(quality) {
     if (!okGround(x, z, 0.5) || saps.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < 1.6) || tooClose(x, z, 0.9)) continue;
     if (fbm(x * 0.09, z * 0.09, 2, 40) < -0.08) continue;      // saplings come in thickets
     if (x > -2.4 && x < 3.4 && z > 0.5 && z < 9.5) continue;   // keep the view down the trail to the water open
+    if (Math.hypot(x + 2.3, z - 5.0) < 4.2) continue;          // and the view up into the old tree's crown
     saps.push({ x, z }); nSap++;
     sapling(x, z, r, forest);
   }
@@ -646,6 +647,8 @@ export function createTrees(quality) {
   addWood([...heroL.geos, ...heroR.geos], barkHero);
   addWood([...heroL.twigs, ...heroR.twigs], barkHero, { shadow: false, reflect: false });
   addWood(forest.geos, barkForest);
+  // washed-out bank roots: bare, dark, wet wood rather than mossy
+  addWood(forest.roots, barkMaterial('japanese_hackberry_bark', { tint: [0.9, 0.85, 0.78], desat: 0.3, moss: 0.12, lichen: 0, normal: 1.6, mossHeight: 0.5 }));
   addWood(forest.small, barkForest, { shadow: false, reflect: false });
 
   const leafGeo = leafGeometry();
