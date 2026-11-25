@@ -113,12 +113,63 @@ def bleed(rgba, iters=24):
     acc = np.where(wgt < 0.5, mean, acc)
     return Image.fromarray(np.dstack([acc, a[..., 3:]]).astype(np.uint8), 'RGBA')
 
-leaves = [make_leaf(i) for i in range(4)]
+# Scanned leaves (Poly Haven island_tree_01 / jacaranda_tree, CC0): cut each leaf out of its atlas, stand it
+# tip-up in a 1:2 cell with the blade base at LEAF_V0, and pull the colour toward a deep olive-green.
+SRC = '/tmp/claude-0/ph/dl/leaf2/'
+def as8(im):
+    a = np.array(im)
+    if a.dtype != np.uint8: a = (a.astype(np.float32) / 257).clip(0, 255).astype(np.uint8)
+    return a
+def scanned(name, target, min_area, horizontal=False, W=256, H=512):
+    col = as8(Image.open(f'{SRC}{name}_leaves_diff_2k.png').convert('RGB'))
+    al = as8(Image.open(f'{SRC}{name}_leaves_alpha_2k.png'))
+    if al.ndim == 3: al = al[..., 0]
+    nr = as8(Image.open(f'{SRC}{name}_leaves_nor_gl_2k.png').convert('RGB'))
+    lab, n = ndimage.label(al > 128)
+    out = []
+    objs = ndimage.find_objects(lab)
+    order = sorted(range(n), key=lambda i: (objs[i][0].start // 400, objs[i][1].start))
+    for i in order:
+        sl = objs[i]
+        m = (lab[sl] == i + 1)
+        if m.sum() < min_area: continue
+        a = (al[sl] * m).astype(np.uint8)
+        c = Image.fromarray(np.dstack([col[sl], a]), 'RGBA'); nn = Image.fromarray(nr[sl], 'RGB')
+        if horizontal:
+            w = a.shape[1]; left = a[:, :int(w * 0.15)].sum(); right = a[:, -int(w * 0.15):].sum()
+            rot = 90 if left < right else -90            # stalk end has less leaf: turn the tip up
+            c = c.rotate(rot, expand=True); nn = nn.rotate(rot, expand=True)
+            v = np.array(nn).astype(np.float32) / 127.5 - 1
+            th = math.radians(rot); ct, st = math.cos(th), math.sin(th)
+            x = v[..., 0] * ct - v[..., 1] * st; y = v[..., 0] * st + v[..., 1] * ct
+            v[..., 0], v[..., 1] = x, y
+            nn = Image.fromarray(((v * 0.5 + 0.5) * 255).clip(0, 255).astype(np.uint8), 'RGB')
+        # fit: blade spans LEAF_V0..LEAF_V1 of the cell height
+        bh = int(H * (LEAF_V1 - LEAF_V0)); bw = min(W - 4, int(c.size[0] * bh / c.size[1]))
+        c = c.resize((bw, bh), Image.LANCZOS); nn = nn.resize((bw, bh), Image.LANCZOS)
+        cell = Image.new('RGBA', (W, H), (0, 0, 0, 0)); celln = Image.new('RGB', (W, H), (128, 128, 255))
+        pos = ((W - bw) // 2, int(H * (1 - LEAF_V1)))
+        cell.paste(c, pos); celln.paste(nn, pos, c.getchannel('A'))
+        out.append([cell, celln])
+    # colour: common gain so the set averages `target`, keeping each leaf's own blotches and veins
+    px = np.concatenate([np.array(c)[..., :3][np.array(c)[..., 3] > 128] for c, _ in out]).astype(np.float32)
+    gain = np.array(target, np.float32) / px.mean(0)
+    for o in out:
+        a = np.array(o[0]).astype(np.float32); a[..., :3] = np.clip(a[..., :3] * gain, 0, 255)
+        o[0] = Image.fromarray(a.astype(np.uint8), 'RGBA')
+    return [tuple(o) for o in out]
+
+broad = scanned('island_tree_01', (68, 102, 40), 20000)
+fronds = scanned('jacaranda_tree', (52, 78, 31), 20000, horizontal=True)
+print('scanned leaves', len(broad), 'fronds', len(fronds))
+pick = [0, 1, 3, 2] if len(broad) >= 4 else list(range(len(broad)))
 atlas = Image.new('RGBA', (1024, 512)); atlas_n = Image.new('RGB', (1024, 512), (128, 128, 255))
-for i, (c, n) in enumerate(leaves):
+for i, k in enumerate(pick):
+    c, n = broad[k % len(broad)]
     atlas.paste(bleed(c), (i * 256, 0)); atlas_n.paste(n, (i * 256, 0))
 atlas.save(f'{OUT}/leaf_atlas.webp', quality=92, method=6)
 atlas_n.save(f'{OUT}/leaf_atlas_n.jpg', quality=90)
+leaves = broad
 
 # --- sprays -----------------------------------------------------------------
 TWIG = (86, 72, 58)
@@ -147,8 +198,7 @@ class Canvas:
             if w > 2.5: d.ellipse([pts[i][0] - w * 0.6, pts[i][1] - w * 0.6, pts[i][0] + w * 0.6, pts[i][1] + w * 0.6], fill=c)
     def leaf(self, x, y, ang, length, variant=None, petiole=0.1):
         """Base of the petiole at (x, y); ang = direction of the leaf, degrees CCW from +x (image y is down)."""
-        v = random.randrange(4) if variant is None else variant
-        if v == 3 and random.random() < 0.6: v = random.randrange(3)
+        v = random.randrange(len(leaves)) if variant is None else variant
         c, n = leaves[v]
         roll = math.radians(random.gauss(0, 24)); pitch = math.radians(random.gauss(8, 16))
         sw, sl = max(0.45, math.cos(roll)), max(0.6, math.cos(pitch))
@@ -190,7 +240,7 @@ class Canvas:
 
 def shoot(cv, x, y, ang, length, leaf_len, depth=0, bare=0.0):
     """A zig-zag beech shoot with alternate leaves in one plane. Returns nothing; draws into cv."""
-    inter = leaf_len * random.uniform(0.34, 0.44)
+    inter = leaf_len * random.uniform(0.27, 0.36)
     n = max(3, int(length / inter))
     pts = [(x, y)]; a = ang; side = random.choice([-1, 1])
     nodes = []
@@ -279,10 +329,32 @@ for i in range(2):
 ba.save(f'{OUT}/bough_atlas.webp', quality=88, method=6, alpha_quality=90)
 bn.resize((1024, 512), Image.LANCZOS).save(f'{OUT}/bough_atlas_n.jpg', quality=88)
 
+# --- second species: compound, feathery leaves (scanned fronds) on stout shoots, darker ----------------------
+leaves = fronds
+def make_spray2(i, size=1024):
+    random.seed(40 + i)
+    cv = Canvas(size)
+    shoot(cv, size * 0.5, size * 0.985, 90 + random.gauss(0, 5), size * random.uniform(0.66, 0.74), size * 0.3, 1, bare=0.34)
+    return cv
+sprays2 = [make_spray2(i) for i in range(4)]
+sa2 = Image.new('RGBA', (2048, 2048)); sn2 = Image.new('RGB', (2048, 2048), (128, 128, 255))
+for i, cv in enumerate(sprays2):
+    pos = ((i % 2) * 1024, (i // 2) * 1024)
+    sa2.paste(bleed(cv.col, 30), pos); sn2.paste(cv.nrm, pos)
+sa2.save(f'{OUT}/spray2_atlas.webp', quality=90, method=6, alpha_quality=92)
+sn2.resize((1024, 1024), Image.LANCZOS).save(f'{OUT}/spray2_atlas_n.jpg', quality=88)
+sprays_keep = sprays; sprays = sprays2
+ba2 = Image.new('RGBA', (2048, 1024)); bn2 = Image.new('RGB', (2048, 1024), (128, 128, 255))
+for i in range(2):
+    c, n = make_bough(200 + i)
+    ba2.paste(bleed(c, 30), (i * 1024, 0)); bn2.paste(n, (i * 1024, 0))
+ba2.save(f'{OUT}/bough2_atlas.webp', quality=88, method=6, alpha_quality=90)
+bn2.resize((1024, 512), Image.LANCZOS).save(f'{OUT}/bough2_atlas_n.jpg', quality=88)
+
 # preview sheet on a neutral background
 def on_bg(im, bg=(120, 150, 190)):
     b = Image.new('RGBA', im.size, bg + (255,)); b.alpha_composite(im); return b.convert('RGB')
 sheet = Image.new('RGB', (2048, 1536))
 sheet.paste(on_bg(atlas), (0, 0)); sheet.paste(atlas_n, (1024, 0))
-sheet.paste(on_bg(sa).resize((1024, 1024)), (0, 512)); sheet.paste(on_bg(ba).resize((1024, 512)), (1024, 512)); sheet.paste(sn.resize((1024, 1024)).crop((0, 0, 1024, 512)), (1024, 1024))
+sheet.paste(on_bg(sa).resize((1024, 1024)), (0, 512)); sheet.paste(on_bg(ba).resize((1024, 512)), (1024, 512)); sheet.paste(on_bg(sa2).resize((512, 512)), (1024, 1024)); sheet.paste(on_bg(ba2).resize((512, 256)), (1536, 1024))
 sheet.save(sys.argv[2] if len(sys.argv) > 2 else '/tmp/leaf_sheet.jpg', quality=88)

@@ -20,7 +20,7 @@ export function leafGeometry() {
   const L = LEAF_V1 - LEAF_V0;
   for (let i = 0; i < st.length; i++) {
     const t = st[i];
-    const hw = Math.max(0.03, leafHalfWidth(t) * 1.16) * (t === 0 ? 4 : 1);
+    const hw = Math.max(0.03, leafHalfWidth(t) * 0.98) * (t === 0 ? 4 : 1);
     const y = pet + t * blade;
     const droop = -0.16 * t * t + 0.03 * t;             // tip curls down
     const fold = 0.26;                                   // V-fold along the midrib

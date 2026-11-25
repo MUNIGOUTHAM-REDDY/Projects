@@ -18,14 +18,22 @@ const WaterShader = {
     varying vec4 vUv;
     varying vec3 vW;
     varying vec2 vSD; varying vec2 vT;
+    uniform sampler2D tBake; uniform vec4 uBake; uniform float uTime;
     void main() {
       vSD = aSD; vT = aT;
       vUv = textureMatrix * vec4(position, 1.0);
-      vW = (modelMatrix * vec4(position, 1.0)).xyz;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      vec3 pos = position;
+      vec3 w0 = (modelMatrix * vec4(position, 1.0)).xyz;
+      // standing waves and haystacks where the stream breaks over ledges and round boulders: real geometry, a few centimetres high
+      vec4 bk = texture2D(tBake, (w0.xz - uBake.xy) * uBake.z);
+      float k = clamp(bk.a, 0.0, 1.0) * smoothstep(0.3, 1.0, length(bk.gb)) * smoothstep(0.04, 0.22, -bk.r);
+      pos.z += k * (0.035 * sin(aSD.y * 3.6 + sin(aSD.x * 2.3) * 1.5) + 0.02 * sin(aSD.x * 5.1 + aSD.y * 1.7 + uTime * 0.6) + 0.012);
+      vW = (modelMatrix * vec4(pos, 1.0)).xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
     }`,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse, tRefr, tBake, tWaterN, tFoam, uShadowMap;
+    // (tBake / uBake / uTime are shared with the vertex stage)
     uniform mat4 uShadowMatrix;
     uniform vec4 uBake;
     uniform vec2 uRes;
@@ -97,7 +105,7 @@ const WaterShader = {
       vec2 nq = (n1.xy * 1.0 + n2.xy * (0.12 + 0.5 * fast) + n4.xy * (0.3 * fast * fast)) * chop;
       // crests run with the flow, but never more than 2:1
       // standing waves: stationary crests across the current below rocks and ledges
-      nq.y += sin(q.y * 7.0 + sin(q.x * 2.3) * 1.5) * clamp(foamK, 0.0, 1.0) * 0.22 * smoothstep(0.3, 1.0, speed);
+      nq.y += cos(q.y * 3.6 + sin(q.x * 2.3) * 1.5) * clamp(foamK, 0.0, 1.0) * 0.3 * smoothstep(0.3, 1.0, speed);
       vec3 n5 = texture2D(tWaterN, p * 0.83 + uTime * vec2(-0.021, 0.034)).xyz * 2.0 - 1.0;   // round wind ripple
       vec2 nxy = Nl * nq.x * 0.55 + T * nq.y + n3.xy * 0.03 + n5.xy * (0.08 + 0.32 * chop);
       nxy *= 1.0 / (1.0 + dist * 0.045);                    // tame sparkle aliasing far away
@@ -128,8 +136,8 @@ const WaterShader = {
       vec3 ft = flowTex(tFoam, q, fl, vec2(1.1, 0.2), 2.2);
       vec3 ft2 = flowTex(tFoam, q + 3.7, fl, vec2(3.0, 0.5), 1.4);
       // drifting bubble lines: long threads of foam carried down the fastest water
-      vec3 ft3 = flowTex(tFoam, q + 1.3, fl, vec2(2.2, 0.12), 2.6);
-      float threads = smoothstep(0.7, 0.9, ft3.b * 0.6 + ft3.r * 0.55) * (smoothstep(0.45, 1.0, fast) * 0.5 + 0.7 * clamp(foamK, 0.0, 1.0)) * ft2.g;
+      vec3 ft3 = flowTex(tFoam, q + 1.3, fl, vec2(1.6, 0.8), 2.6);
+      float threads = smoothstep(0.7, 0.9, ft3.b * 0.6 + ft3.r * 0.55) * (0.7 * clamp(foamK, 0.0, 1.0)) * ft2.g;
       float lace = ft.r * 0.75 + ft2.r * 0.5 + ft2.g * 0.3;
       float fk = clamp(foamK, 0.0, 1.2);
       // never a solid sheet: even the heaviest white water stays broken into lace and streaks
@@ -149,16 +157,22 @@ const WaterShader = {
 };
 
 function ribbonGeometry() {
-  const { n, xs, zs, ws, tx, tz } = RIVER_SAMPLES;
+  const { n, xs, zs, ws, tx, tz, ss } = RIVER_SAMPLES;
   const pos = [], idx = [], sd = [], tt = [];
-  const ss = RIVER_SAMPLES.ss;
+  const ACROSS = 14;
   let c = 0;
-  for (let i = 0; i < n; i += 2) {
+  for (let i = 0; i < n; i++) {
+    // dense where people look (0.5 m stations), coarse far up- and downstream
+    const near = Math.hypot(xs[i] + 1, zs[i] + 5) < 45;
+    if (!near && i % 4 !== 0) continue;
     const w = ws[i] + 4.5;
-    // Reflector expects a plane in local XY facing +Z; it is laid flat by rotating -90 deg about X.
-    pos.push(xs[i] + tz[i] * w, -(zs[i] - tx[i] * w), 0, xs[i] - tz[i] * w, -(zs[i] + tx[i] * w), 0);
-    sd.push(-w, ss[i], w, ss[i]); tt.push(tx[i], tz[i], tx[i], tz[i]);
-    if (c > 0) { const a = (c - 1) * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    for (let k = 0; k <= ACROSS; k++) {
+      const d = -w + (2 * w * k) / ACROSS;
+      // Reflector expects a plane in local XY facing +Z; it is laid flat by rotating -90 deg about X.
+      pos.push(xs[i] - tz[i] * d, -(zs[i] + tx[i] * d), 0);
+      sd.push(d, ss[i]); tt.push(tx[i], tz[i]);
+    }
+    if (c > 0) for (let k = 0; k < ACROSS; k++) { const a0 = (c - 1) * (ACROSS + 1) + k, b0 = a0 + ACROSS + 1; idx.push(a0, b0, a0 + 1, a0 + 1, b0, b0 + 1); }
     c++;
   }
   const g = new THREE.BufferGeometry();

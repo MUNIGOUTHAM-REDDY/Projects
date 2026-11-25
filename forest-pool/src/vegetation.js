@@ -196,12 +196,12 @@ export function createGroundCover(quality) {
   // --- Leaf litter: small, weathered beech leaves. They drift into the hollows and along the edges of the
   // trail, lie curled, crumpled or half trodden in, and a few have sunk onto the stream bed by the banks.
   const litter = new Instances();
-  const litterTarget = hi ? 44000 : 12000;
+  const litterTarget = hi ? 52000 : 13000;
   const nrm = new THREE.Vector3(), dir = new THREE.Vector3(), side = new THREE.Vector3(), X = new THREE.Vector3(), Z = new THREE.Vector3();
   let n = 0; tries = 0;
   while (n < litterTarget && tries++ < litterTarget * 14) {
-    const a = r() * 6.283, d = Math.pow(r(), 0.8) * 26;
-    const x = Math.cos(a) * d, z = 2 + Math.sin(a) * d;
+    const a = r() * 6.283, d = Math.pow(r(), 0.8) * 31;
+    const x = Math.cos(a) * d, z = 0 + Math.sin(a) * d;
     const y = heightAt(x, z);
     const sunk = y < 0.02;
     if (sunk && (y < -0.5 || r() < 0.55)) continue;

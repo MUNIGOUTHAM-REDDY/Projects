@@ -172,7 +172,7 @@ function basis(pos, dir, nrm, sx, sy, sz, out) {
 
 // Real leaves along a twig: alternate and roughly in the twig's plane, but as untidy as the real thing:
 // uneven spacing bunched toward the tip, missing leaves, every size, each rolled and pitched its own way.
-function leafTwig(limb, leaves, r, tint, { spacing = 0.034, size = 0.088, from = 0.1, shade = 1 } = {}) {
+function leafTwig(limb, leaves, r, tint, { spacing = 0.034, size = 0.1, from = 0.1, shade = 1 } = {}) {
   const n = Math.max(2, Math.floor(limb.path.L * (1 - from) / spacing));
   const P = V(0, 0, 0), T = V(0, 0, 0), side = V(0, 0, 0), dir = V(0, 0, 0), nrm = V(0, 0, 0);
   let s = r() < 0.5 ? 1 : -1;
@@ -379,7 +379,7 @@ function heroLeft(out, r) {
   ];
   mains.forEach((m, i) => out.geos.push(tube(m, { radial: i < 2 ? 18 : 10, collar: i < 2 ? 0.35 : 0.55, lumps: 0.05, seed: i * 2.1, knots: i < 2 ? addKnots(r, 4, 4, m.r0) : null, barkTile: i < 2 ? 1.5 : 0.75 })));
   const top = new Limb(new Path(trunkPath.p.filter((_, i) => trunkPath.cum[i] > 5.5)), 0.17, 0.04, 0.03, 0.5, 1);
-  growHero([...mains, top], r, out, [0.9, 0.96, 0.8], { twigDensity: out.twigDensity });
+  growHero([...mains, top], r, out, [1.0, 1.0, 0.9], { twigDensity: out.twigDensity });
 }
 
 function heroRight(out, r) {
@@ -412,7 +412,7 @@ function heroRight(out, r) {
     mains.push(leader(pts, lerp(0.12, 0.05, t), 0.012, 0.3 + t * 0.4));
   }
   mains.forEach((m, i) => out.geos.push(tube(m, { radial: 10, collar: 0.6, lumps: 0.04, seed: i, barkTile: 0.75 })));
-  growHero(mains, r, out, [0.7, 0.86, 0.78], { branchCount: 12, twigDensity: out.twigDensity });
+  growHero(mains, r, out, [0.8, 0.9, 0.85], { branchCount: 12, twigDensity: out.twigDensity });
 }
 
 // --- Forest ---------------------------------------------------------------------------
@@ -454,7 +454,7 @@ function forestTree(x, z, r, out, kind, force = null) {
   let H = 21 + r() * 9, R = 0.15 + Math.pow(r(), 3) * 0.42;        // many slim stems, few stout ones
   if (type === 'old') { H = 25 + r() * 8; R = 0.4 + r() * r() * 0.22; }
   if (type === 'young') { H = 10 + r() * 7; R = 0.07 + H * 0.006 + r() * 0.03; }
-  if (type === 'snag') { H = 7 + r() * 9; R = 0.2 + r() * 0.2; }
+  if (type === 'snag') { H = force ? 11 + r() * 3 : 7 + r() * 9; R = force ? 0.3 : 0.2 + r() * 0.2; }
   // Trees on the bank lean out over the water toward the light; everything else leans a few degrees its own way.
   const rv = river(x, z);
   const e = Math.abs(rv.d) - rv.w;
@@ -462,12 +462,12 @@ function forestTree(x, z, r, out, kind, force = null) {
   const la = r() * 6.283, lm = (type === 'young' ? 0.06 + r() * 0.16 : 0.02 + r() * 0.1) * (far ? 1.7 : 1);
   const lx = -rv.tz * toward + Math.cos(la) * lm, lz = rv.tx * toward + Math.sin(la) * lm;
   const ctrl = [];
-  const bend = (r() - 0.5) * (type === 'young' ? 1.6 : 1.1), ba = r() * 6.28;
+  const bend = (r() - 0.5) * (type === 'young' ? 2.2 : 1.9), ba = r() * 6.28, bend2 = (r() - 0.5) * (type === 'snag' ? 0.2 : 0.6), bb = r() * 6.28;
   for (let i = 0; i <= 6; i++) {
     const f = i / 6, h = f * H;
-    const sb = Math.sin(f * Math.PI) * bend;
-    const j = i > 0 ? 0.26 : 0;
-    ctrl.push(V(x + lx * h * (0.6 + f) + Math.cos(ba) * sb + (r() - 0.5) * j, y0 - 0.6 + h, z + lz * h * (0.6 + f) + Math.sin(ba) * sb + (r() - 0.5) * j));
+    const sb = Math.sin(f * Math.PI) * bend * (type === 'snag' ? 0.3 : 1), sc2 = Math.sin(f * Math.PI * 2.3) * bend2 * f;
+    const j = i > 0 ? 0.36 : 0;
+    ctrl.push(V(x + lx * h * (0.6 + f) + Math.cos(ba) * sb + Math.cos(bb) * sc2 + (r() - 0.5) * j, y0 - 0.6 + h, z + lz * h * (0.6 + f) + Math.sin(ba) * sb + Math.sin(bb) * sc2 + (r() - 0.5) * j));
   }
   const path = smoothPath(ctrl, far ? 0.5 : 1.3);
   const trunk = new Limb(path, R, R * 0.16, 0, 1.0, 0);
@@ -475,9 +475,9 @@ function forestTree(x, z, r, out, kind, force = null) {
   trunk.radiusAt = (t) => (snag ? R * (1 - 0.35 * t) : R * (1 - 0.84 * Math.pow(t, 1.25)));
   trunk.swayAt = (t) => (snag ? 0 : (type === 'young' ? 1.4 : 1.0) * Math.pow(Math.max(0, t - 0.1), 2.3));
   // every trunk its own shade of grey: some weathered pale, some dark and wet-looking, a few green with algae
-  const bv = snag ? (force ? 1.45 : 0.95) : 0.72 + r() * 0.4, bh = r();
+  const bv = snag ? 1.0 : 0.72 + r() * 0.4, bh = r();
   const tintV = [bv * (0.96 + bh * 0.08), bv * (0.98 + (1 - bh) * 0.06), bv * (0.9 + bh * 0.1)];
-  out.geos.push(tube(trunk, { radial: far ? 7 : type === 'young' ? 9 : 14, flare: far ? 0 : type === 'old' ? 1.15 : 0.8, flareLobes: 4 + Math.floor(r() * 3), flareH: 0.4 + R * 0.6, seed: r() * 10, lumps: far ? 0 : snag ? 0.12 : 0.06, knots: far || type === 'young' ? null : addKnots(r, Math.min(8, H * 0.4), 5, R), barkTile: 1.3, ground: y0, tintV }));
+  (snag ? out.snags : out.geos).push(tube(trunk, { radial: far ? 7 : type === 'young' ? 9 : 14, flare: far ? 0 : type === 'old' ? 1.6 : 1.15, flareLobes: 4 + Math.floor(r() * 3), flareH: 0.45 + R * 0.9, seed: r() * 10, lumps: far ? 0 : snag ? 0.12 : 0.06, knots: far || type === 'young' ? null : addKnots(r, Math.min(8, H * 0.4), 5, R), barkTile: 1.3, ground: y0, tintV }));
   out.contacts.push({ x, z, r: R * 2.6, dark: 0.5, moss: 0.6 });
   // roots exposed where the bank has been washed out from under the tree
   if (!far && e < 3.4 && type !== 'young') {
@@ -487,18 +487,22 @@ function forestTree(x, z, r, out, kind, force = null) {
   if (snag) {
     // broken stubs and one or two dead limbs
     const stubs = sprout(trunk, { count: 4, t0: 0.35, t1: 0.98, angle: [50, 85], len: () => 0.5 + r() * 1.6, rRatio: 0.4, rTip: 0.02, planar: false, wiggle: 0.3, segs: 3, droop: 0.15 }, r);
-    for (const b of stubs) out.geos.push(tube(b, { radial: 5, collar: 0.5, barkTile: 0.7, tintV }));
+    for (const b of stubs) out.snags.push(tube(b, { radial: 5, collar: 0.5, barkTile: 0.7, tintV }));
     return;
   }
   // species and site: most crowns mid-green, some deep blue-green, some olive, some yellow-green, a few much darker (alder)
   const ph = Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1, pv = 0.86 + 0.22 * (Math.abs(Math.sin(x * 39.3 + z * 11.1) * 9631.7) % 1);
   const pal = ph < 0.16 ? [0.5, 0.7, 0.56] : ph < 0.36 ? [0.66, 0.86, 0.78] : ph < 0.54 ? [0.98, 0.92, 0.5] : ph < 0.7 ? [1.06, 1.02, 0.56] : [0.86, 0.96, 0.74];
   const tint = [(0.86 + r() * 0.3) * pal[0] * pv, (0.94 + r() * 0.14) * pal[1] * pv, (0.72 + r() * 0.4) * pal[2] * pv];
+  // a second, darker species with feathery compound leaves, about a quarter of the stand
+  const sp2 = !far && ph < 0.26;
+  if (sp2) { tint[0] = 0.8 * pv; tint[1] = 0.84 * pv; tint[2] = 0.8 * pv; }
   { const c = path.at(0.78); out.crowns.push({ x: c.x, z: c.z, r: Math.max(3, (type === 'young' ? 4.4 * 0.9 : type === 'old' ? 8.5 * H / 26 : 7.0 * H / 26) * 0.95) }); }
   const crown0 = type === 'young' ? 0.25 + r() * 0.2 : type === 'old' ? 0.3 + r() * 0.12 : 0.34 + r() * 0.26;
   const lenBase = (type === 'young' ? 4.4 : type === 'old' ? 8.5 : 7.0) * (H / 26) * (type === 'young' ? 26 / H * 0.9 : 1);
   const nL = far ? 10 : type === 'young' ? 13 + Math.floor(r() * 4) : 13 + Math.floor(r() * 5);
   const o = { far, mid, tint, tintV, H };
+  if (sp2) out = { ...out, sprays: out.sprays2, boughs: out.boughs2 };
   if (type === 'old' && !far) {
     // co-dominant leaders split off low in the crown and carry their own limbs
     const nLead = 1 + Math.floor(r() * 2);
@@ -574,7 +578,7 @@ export function createTrees(quality) {
   heroLeft(heroL, r);
   heroRight(heroR, r);
 
-  const forest = { geos: [], small: [], sprays: new Instances(), boughs: new Instances(), leaves: new Instances(), contacts: [], roots: [], crowns: [], realNear: hi };
+  const forest = { geos: [], small: [], sprays: new Instances(), boughs: new Instances(), sprays2: new Instances(), boughs2: new Instances(), snags: [], leaves: new Instances(), contacts: [], roots: [], crowns: [], realNear: hi };
   const placed = [{ x: HERO_TREES.left.x, z: HERO_TREES.left.z }, { x: HERO_TREES.right.x, z: HERO_TREES.right.z }];
   const tooClose = (x, z, d) => placed.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < d * d);
   const okGround = (x, z, margin) => {
@@ -599,9 +603,16 @@ export function createTrees(quality) {
     const grove = clamp(0.5 + 1.6 * fbm(x * 0.07, z * 0.07, 2, 70), 0, 1);
     if (r() > 0.25 + 0.75 * grove) continue;
     if (z < -14 && z > -45 && Math.abs(river(x, z).d) < river(x, z).w + 9 && r() < 0.4) continue;   // keep depth open along the river
-    if (!okGround(x, z, 0.9 + r() * 2.5) || tooClose(x, z, lerp(6.5, 2.3, grove) * (0.75 + r() * 0.5))) continue;
+    if (!okGround(x, z, 0.9 + r() * 2.5) || tooClose(x, z, lerp(7.5, 3.4, grove) * (0.75 + r() * 0.5))) continue;
     placed.push({ x, z }); nNear++;
     forestTree(x, z, r, forest, Math.hypot(x + 1, z + 3) < (hi ? 30 : 20) ? 'near' : 'mid');
+    // trees come up in twos and threes from the same patch of light
+    for (let c = 0, nc = r() < 0.45 ? 1 + Math.floor(r() * 2) : 0; c < nc && nNear < nearTarget; c++) {
+      const ca = r() * 6.283, cd = 1.3 + r() * 1.5, cx = x + Math.cos(ca) * cd, cz = z + Math.sin(ca) * cd;
+      if (!okGround(cx, cz, 0.9) || tooClose(cx, cz, 1.15)) continue;
+      placed.push({ x: cx, z: cz }); nNear++;
+      forestTree(cx, cz, r, forest, Math.hypot(cx + 1, cz + 3) < (hi ? 30 : 20) ? 'near' : 'mid');
+    }
   }
   // Big trees on both banks upstream lean together over the water and close the canopy above the river.
   for (let i = 0; i < (hi ? 9 : 6); i++) {
@@ -616,7 +627,7 @@ export function createTrees(quality) {
     }
   }
   // Two bleached dead trunks stand where the main views can see them.
-  for (const [sx0, sz0] of [[-4.6, -11.5], [8.0, -14.5]]) {
+  for (const [sx0, sz0] of [[-7.0, -10.0], [7.6, -13.0]]) {
     let x = sx0, z = sz0;
     for (let k = 0; k < 40 && bankE(x, z) < 1.2; k++) { const rv = river(x, z), sg = Math.sign(rv.d) || 1; x += -rv.tz * sg * 0.4; z += rv.tx * sg * 0.4; }
     placed.push({ x, z });
@@ -649,13 +660,13 @@ export function createTrees(quality) {
   }
 
   let nShrub = 0; tries = 0;
-  const shrubTarget = hi ? 46 : 20;
+  const shrubTarget = hi ? 78 : 26;
   while (nShrub < shrubTarget && tries++ < 6000) {
     const ang = r() * 6.283, rad = 6 + Math.pow(r(), 0.8) * 30;
     const x = -1 + Math.cos(ang) * rad, z = -3 + Math.sin(ang) * rad;
     if (!okGround(x, z, 0.8) || tooClose(x, z, 1.6) || saps.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < 4)) continue;
     if (Math.hypot(x - 0.2, z - 8.4) < 6 || pathDist(x, z) < 3) continue;
-    if (fbm(x * 0.08 + 20, z * 0.08, 2, 44) < 0.0) continue;
+    if (fbm(x * 0.08 + 20, z * 0.08, 2, 44) < -0.14) continue;
     saps.push({ x, z }); nShrub++;
     shrub(x, z, r, forest);
   }
@@ -677,6 +688,8 @@ export function createTrees(quality) {
   addWood([...heroL.geos, ...heroR.geos], barkHero);
   addWood([...heroL.twigs, ...heroR.twigs], barkHero, { shadow: false, reflect: false });
   addWood(forest.geos, barkForest);
+  // dead standing trunks: bark gone, wood bleached silver-grey
+  addWood(forest.snags, barkMaterial('japanese_hackberry_bark', { tint: [2.3, 2.2, 2.0], desat: 0.8, moss: 0.3, lichen: 0, normal: 1.0, mossHeight: 0.8 }));
   // washed-out bank roots: bare, dark, wet wood rather than mossy
   addWood([...forest.roots, ...heroR.rootGeos], barkMaterial('japanese_hackberry_bark', { tint: [0.9, 0.85, 0.78], desat: 0.3, moss: 0.12, lichen: 0, normal: 1.6, mossHeight: 0.5 }));
   addWood(forest.small, barkForest, { shadow: false, reflect: false });
@@ -693,6 +706,11 @@ export function createTrees(quality) {
   thinned.push(sprays, boughs);
   sprays.frustumCulled = false; boughs.frustumCulled = false;
   group.add(sprays, boughs);
+  const sprays2 = forest.sprays2.build(cardGeometry(2, 0.2, 0.1), cardMaterials('spray2_atlas', 2, 2), { shadowFrac: 0.5, mirrorFrac: 0.5 });
+  const boughs2 = forest.boughs2.build(cardGeometry(2, 0.14, 0.08), cardMaterials('bough2_atlas', 2, 1), { shadowFrac: 0.2, mirrorFrac: 0.6 });
+  thinned.push(sprays2, boughs2);
+  sprays2.frustumCulled = false; boughs2.frustumCulled = false;
+  group.add(sprays2, boughs2);
 
   group.userData.crowns = [...forest.crowns, { x: HERO_TREES.left.x - 0.5, z: HERO_TREES.left.z - 1.2, r: 7.5 }, { x: HERO_TREES.right.x - 0.5, z: HERO_TREES.right.z - 0.4, r: 6.5 }];
   group.userData.contacts = forest.contacts;
