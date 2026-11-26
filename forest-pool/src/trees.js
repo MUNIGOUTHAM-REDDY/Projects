@@ -25,7 +25,6 @@ const SNAGS = [];
 // Extra trees: [x, z, lod, type].
 const ADDS = [
   [7.75, -1.0, 'near', 'young'], [9.2, 0.6, 'near', 'young'],   // close the sky gap at the right of the trail view
-  [-10.5, -12.5, 'near', 'old'],                                // a big crown over the far bank, filling the top of the portrait view
 ];
 
 const perlin = new ImprovedNoise();
