@@ -1,7 +1,7 @@
 // Bundles src/ into one inline module and writes dist/index.html with the assets beside it.
 // three.js stays external (loaded from jsDelivr via the page's import map).
 import { build } from 'esbuild';
-import { readFileSync, writeFileSync, mkdirSync, cpSync, rmSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, cpSync, rmSync, readdirSync, existsSync } from 'node:fs';
 
 const out = await build({
   entryPoints: ['src/main.js'],
@@ -18,6 +18,8 @@ rmSync('dist', { recursive: true, force: true });
 mkdirSync('dist', { recursive: true });
 writeFileSync('dist/index.html', html);
 cpSync('assets', 'dist/assets', { recursive: true });
+// Optional intro splash; remove intro.js (and its <script> tag) to drop it.
+if (existsSync('intro.js')) cpSync('intro.js', 'dist/intro.js');
 // Artifacts only serve web file types, so every glTF becomes a .json with its buffer inlined as base64.
 for (const id of readdirSync('assets/models')) {
   const dir = `assets/models/${id}`;
