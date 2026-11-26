@@ -4,11 +4,39 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { manager, A } from './textures.js';
 
-const loader = new GLTFLoader(manager);
+const loader = new GLTFLoader();
+const fileLoader = new THREE.FileLoader(manager);
+fileLoader.setResponseType('json');
+
+// The models ship as glTF JSON with their buffer inlined as a base64 data: URI. Some hosts'
+// content-security policy forbids fetching data: URIs, which made GLTFLoader fail silently and
+// the page hang at 100%. Decode the buffer ourselves and hand GLTFLoader an in-memory GLB.
+function toGLB(gltf) {
+  const b64 = gltf.buffers[0].uri.split(',')[1];
+  const raw = atob(b64);
+  const bin = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bin[i] = raw.charCodeAt(i);
+  const json = { ...gltf, buffers: [{ byteLength: bin.length }] };
+  const jsonBytes = new TextEncoder().encode(JSON.stringify(json));
+  const jsonLen = (jsonBytes.length + 3) & ~3, binLen = (bin.length + 3) & ~3;
+  const out = new Uint8Array(12 + 8 + jsonLen + 8 + binLen);
+  const dv = new DataView(out.buffer);
+  dv.setUint32(0, 0x46546c67, true); dv.setUint32(4, 2, true); dv.setUint32(8, out.length, true);
+  dv.setUint32(12, jsonLen, true); dv.setUint32(16, 0x4e4f534a, true);
+  out.fill(0x20, 20, 20 + jsonLen); out.set(jsonBytes, 20);
+  const o = 20 + jsonLen;
+  dv.setUint32(o, binLen, true); dv.setUint32(o + 4, 0x004e4942, true);
+  out.set(bin, o + 8);
+  return out.buffer;
+}
 export const modelJobs = [];
 export function loadModel(id, { centre = true } = {}) {
   const job = new Promise((resolve) => {
-    loader.load(A(`models/${id}/${id}.json`), (gltf) => {
+    const fail = (e) => { console.warn('model failed', id, e); resolve([]); };
+    fileLoader.load(A(`models/${id}/${id}.json`), (data) => {
+      let glb;
+      try { glb = toGLB(data); } catch (e) { fail(e); return; }
+      loader.parse(glb, '', (gltf) => {
       const out = [];
       gltf.scene.traverse((o) => {
         if (!o.isMesh) return;
@@ -27,7 +55,8 @@ export function loadModel(id, { centre = true } = {}) {
       });
       out.sort((a, b) => a.name.localeCompare(b.name));
       resolve(out);
-    });
+      }, fail);
+    }, undefined, fail);
   });
   modelJobs.push(job);
   return job;
