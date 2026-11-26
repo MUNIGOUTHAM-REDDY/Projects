@@ -16,7 +16,8 @@ import { LAYOUT } from './layout.js';
 const EDITS = [
   { at: [-3.25, -12.08], remove: true },          // spindly shrub in front of the far-bank viewpoint
   { at: [10.94, -11.23], remove: true },          // sapling hiding the snag
-  { at: [-8.47, -12.52], to: [-11.4, -15.6] },    // heavy trunk at the left edge of the water's-edge view
+  { at: [-8.47, -12.52], to: [-11.4, -15.6] },
+  { at: [-9.5, -14], to: [-12.5, -18.5] },    // heavy trunk at the left edge of the water's-edge view
 ];
 // Dead standing trunks placed where the main views see them.
 const SNAGS = [];
@@ -464,7 +465,7 @@ function forestTree(x, z, r, out, kind, force = null, special = false) {
   let H = 21 + r() * 9, R = 0.15 + Math.pow(r(), 3) * 0.42;        // many slim stems, few stout ones
   if (type === 'old') { H = 25 + r() * 8; R = 0.4 + r() * r() * 0.22; }
   if (type === 'young') { H = 10 + r() * 7; R = 0.07 + H * 0.006 + r() * 0.03; }
-  if (type === 'snag') { H = special ? 12 + r() * 3 : 7 + r() * 9; R = special ? 0.3 : 0.2 + r() * 0.2; }
+  if (type === 'snag') { H = special ? 7.6 + r() * 1.2 : 7 + r() * 9; R = special ? 0.3 : 0.2 + r() * 0.2; }
   // Trees on the bank lean out over the water toward the light; everything else leans a few degrees its own way.
   const rv = river(x, z);
   const e = Math.abs(rv.d) - rv.w;

@@ -58,7 +58,6 @@ export function createGroundCover(quality) {
     const h = HERO_TREES[key];
     for (let i = 0; i < 9; i++) { const a = r() * 6.283, d = 0.8 + r() * 1.5; addFern(h.x + Math.cos(a) * d, h.z + Math.sin(a) * d, 0.8 + r() * 0.8); }
   }
-  for (const [fx, fz, fs] of [[-3.7, -9.5, 1.5], [-3.0, -10.4, 1.2], [-4.4, -10.3, 1.3], [-3.4, -11.3, 1.0]]) addFern(fx, fz, fs);   // fern clump by the far-bank viewpoint
   let tries = 0;
   const fernTarget = hi ? 760 : 300;
   while (ferns.length < fernTarget && tries++ < 20000) {
@@ -238,6 +237,7 @@ export function createGroundCover(quality) {
   noReflect.push(lm);
   group.add(lm);
 
+  for (const [fx, fz, fs] of [[-3.7, -9.5, 1.5], [-3.0, -10.4, 1.2], [-4.4, -10.3, 1.3], [-3.4, -11.3, 1.0]]) addFern(fx, fz, fs);   // fern clump by the far-bank viewpoint
   group.userData.contacts = contacts;
   group.userData.noReflect = noReflect;
   return group;
