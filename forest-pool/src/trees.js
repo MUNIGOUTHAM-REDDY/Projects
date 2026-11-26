@@ -17,10 +17,16 @@ const EDITS = [
   { at: [-3.25, -12.08], remove: true },          // spindly shrub in front of the far-bank viewpoint
   { at: [10.94, -11.23], remove: true },          // sapling hiding the snag
   { at: [-8.47, -12.52], to: [-11.4, -15.6] },
-  { at: [-9.5, -14], to: [-12.5, -18.5] },    // heavy trunk at the left edge of the water's-edge view
+  { at: [-9.5, -14], to: [-12.5, -18.5] },
+  { at: [-6.85, -10.78], to: [-9.5, -9.5] },      // young tree whose limbs hung over the river in the view from above, and stood at the left edge of the water's-edge view    // heavy trunk at the left edge of the water's-edge view
 ];
 // Dead standing trunks placed where the main views see them.
 const SNAGS = [];
+// Extra trees: [x, z, lod, type].
+const ADDS = [
+  [7.75, -1.0, 'near', 'young'], [9.2, 0.6, 'near', 'young'],   // close the sky gap at the right of the trail view
+  [-10.5, -12.5, 'near', 'old'],                                // a big crown over the far bank, filling the top of the portrait view
+];
 
 const perlin = new ImprovedNoise();
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -465,7 +471,7 @@ function forestTree(x, z, r, out, kind, force = null, special = false) {
   let H = 21 + r() * 9, R = 0.15 + Math.pow(r(), 3) * 0.42;        // many slim stems, few stout ones
   if (type === 'old') { H = 25 + r() * 8; R = 0.4 + r() * r() * 0.22; }
   if (type === 'young') { H = 10 + r() * 7; R = 0.07 + H * 0.006 + r() * 0.03; }
-  if (type === 'snag') { H = special ? 7.6 + r() * 1.2 : 7 + r() * 9; R = special ? 0.3 : 0.2 + r() * 0.2; }
+  if (type === 'snag') { H = special ? 6.6 + r() * 1.0 : 7 + r() * 9; R = special ? 0.3 : 0.2 + r() * 0.2; }
   // Trees on the bank lean out over the water toward the light; everything else leans a few degrees its own way.
   const rv = river(x, z);
   const e = Math.abs(rv.d) - rv.w;
@@ -487,7 +493,7 @@ function forestTree(x, z, r, out, kind, force = null, special = false) {
   trunk.radiusAt = (t) => (snag ? R * (1 - 0.3 * t) * (1 - 0.8 * smoothstep(0.9, 1.0, t)) : R * (1 - 0.84 * Math.pow(t, 1.25)));
   trunk.swayAt = (t) => (snag ? 0 : (type === 'young' ? 1.4 : 1.0) * Math.pow(Math.max(0, t - 0.1), 2.3));
   // every trunk its own shade of grey: some weathered pale, some dark and wet-looking, a few green with algae
-  const bv = snag ? (special ? 1.7 : 1.0) : 0.72 + r() * 0.4, bh = r();
+  const bv = snag ? (special ? 1.12 : 0.9) : 0.72 + r() * 0.4, bh = r();
   const tintV = [bv * (0.96 + bh * 0.08), bv * (0.98 + (1 - bh) * 0.06), bv * (0.9 + bh * 0.1)];
   (snag ? out.snags : out.geos).push(tube(trunk, { radial: far ? 7 : type === 'young' ? 9 : 14, flare: far ? 0 : type === 'old' ? 1.6 : 1.15, flareLobes: 4 + Math.floor(r() * 3), flareH: 0.45 + R * 0.9, seed: r() * 10, lumps: far ? 0 : snag ? 0.2 : 0.06, knots: far || type === 'young' ? null : addKnots(r, Math.min(8, H * 0.4), 5, R), barkTile: 1.3, ground: y0, tintV }));
   out.contacts.push({ x, z, r: R * 2.6, dark: 0.5, moss: 0.6 });
@@ -608,6 +614,7 @@ export function createTrees(quality) {
     if (kind === 'far') nFar++; else nNear++;
     forestTree(x, z, rng(seedOf(x, z)), forest, kind, type, !!special);
   }
+  for (const a of ADDS) { nNear++; forestTree(a[0], a[1], rng(seedOf(a[0], a[1])), forest, a[2], a[3]); }
   for (const s of SNAGS) forestTree(s[0], s[1], rng(seedOf(s[0], s[1])), forest, 'near', 'snag', true);
   for (const [x, z] of LAYOUT.s) {
     const e = moved(x, z);
