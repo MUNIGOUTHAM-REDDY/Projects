@@ -97,9 +97,9 @@ const WaterShader = {
 
       // long glassy swells, finer chop where the water runs fast and shallow, a breath of wind
       fl = fl * min(1.0, 0.2 / max(length(fl), 1e-3));        // cap the shear so fast water does not smear
-      vec3 n1 = flowNormal(q, fl, vec2(0.5, 0.27), 1.8, 0.0);
-      vec3 n2 = flowNormal(q, fl, vec2(1.5, 0.85), 1.3, 0.3);
-      vec3 n4 = flowNormal(q, fl, vec2(3.4, 2.0), 0.8, 0.6);
+      vec3 n1 = flowNormal(q, fl, vec2(0.5, 0.32), 1.8, 0.0);
+      vec3 n2 = flowNormal(q, fl, vec2(1.5, 1.3), 1.3, 0.3);
+      vec3 n4 = flowNormal(q, fl, vec2(3.4, 3.4), 0.8, 0.6);
       vec3 n3 = texture2D(tWaterN, p * 0.19 + uTime * vec2(0.013, 0.009)).xyz * 2.0 - 1.0;
       float fast = smoothstep(0.15, 1.15, speed);
       float chop = 0.17 + 0.6 * fast + 0.6 * clamp(foamK, 0.0, 1.0);
@@ -110,7 +110,8 @@ const WaterShader = {
       // standing waves: stationary crests across the current below rocks and ledges
       nq.y += cos(q.y * 3.6 + sin(q.x * 2.3) * 1.5) * clamp(foamK, 0.0, 1.0) * 0.3 * smoothstep(0.3, 1.0, speed);
       vec3 n5 = texture2D(tWaterN, p * 0.83 + uTime * vec2(-0.021, 0.034)).xyz * 2.0 - 1.0;   // round wind ripple
-      vec2 nxy = Nl * nq.x * 0.55 + T * nq.y + n3.xy * 0.03 + n5.xy * (0.08 + 0.32 * chop);
+      // equal slope across and along the current, so sun glitter breaks into short flecks instead of long streaks
+      vec2 nxy = Nl * nq.x * 0.5 + T * nq.y * 0.9 + n3.xy * 0.03 + n5.xy * (0.1 + 0.42 * chop);
       nxy *= 1.0 / (1.0 + dist * 0.045);                    // tame sparkle aliasing far away
       vec3 n = normalize(vec3(nxy.x, 1.0, nxy.y));
 

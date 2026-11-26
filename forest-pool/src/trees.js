@@ -24,6 +24,8 @@ const EDITS = [
 const SNAGS = [];
 // Extra trees: [x, z, lod, type].
 const ADDS = [
+  [6.3, -2.6, 'near', 'young'],     // a crown over the right bank, down-sun of the pool, for the top of the portrait view
+  [-6.4, 10.0, 'near', 'young'],    // fills the upper left of the canopy view
   [7.75, -1.0, 'near', 'young'], [9.2, 0.6, 'near', 'young'],   // close the sky gap at the right of the trail view
 ];
 
