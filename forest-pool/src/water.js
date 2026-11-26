@@ -134,11 +134,13 @@ const WaterShader = {
       vec3 H = normalize(uSunDir + V);
       float nh = max(dot(n, H), 0.0);
       float spec = pow(nh, 900.0) * 14.0 + pow(nh, 120.0) * 0.35;
+      // at a grazing view glints stretch toward the viewer; a fine round mask breaks them into flecks
+      spec *= smoothstep(0.38, 0.62, vnoise(p * 17.0 + uTime * vec2(0.9, -0.6))) * 1.5;
       col += uSunColor * spec * vis * (0.04 + 0.96 * F) * 2.5;
 
       // foam: lacy cells that drift with the flow, densest right against the rocks
-      vec3 ft = flowTex(tFoam, q, fl, vec2(1.1, 0.2), 2.2);
-      vec3 ft2 = flowTex(tFoam, q + 3.7, fl, vec2(3.0, 0.5), 1.4);
+      vec3 ft = flowTex(tFoam, q, fl, vec2(1.1, 0.55), 2.2);        // foam cells at most 2:1 along the current
+      vec3 ft2 = flowTex(tFoam, q + 3.7, fl, vec2(3.0, 1.5), 1.4);
       // drifting bubble lines: long threads of foam carried down the fastest water
       vec3 ft3 = flowTex(tFoam, q + 1.3, fl, vec2(1.6, 0.8), 2.6);
       float threads = smoothstep(0.7, 0.9, ft3.b * 0.6 + ft3.r * 0.55) * (0.7 * clamp(foamK, 0.0, 1.0)) * ft2.g;
