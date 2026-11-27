@@ -5,6 +5,8 @@ import { heightAt } from './world.js';
 import { pbr, tex, A } from './textures.js';
 import { underwater, chain, dapple, worldPos } from './shaders.js';
 import { SPLAT } from './bake.js';
+import { registerMesh } from './chunks.js';
+import { TIER } from './tier.js';
 
 function displacedPlane(size, segs, cx, cz, sink = null) {
   const g = new THREE.PlaneGeometry(size, size, segs, segs);
@@ -24,7 +26,7 @@ function displacedPlane(size, segs, cx, cz, sink = null) {
 export function createTerrain(quality, splat) {
   const ground = pbr('forrest_ground_01');
   const litter = pbr('leaves_forest_ground');
-  const clump = pbr('forest_leaves_02');
+  const clump = { map: tex(A('forest_leaves_02_diff.jpg')) };
   const dirt = pbr('forest_ground_04');
   const peb = pbr('ganges_river_pebbles');
   const sand = tex(A('forrest_sand_01_diff.jpg'));
@@ -157,17 +159,20 @@ export function createTerrain(quality, splat) {
   });
   dapple(mat);
 
-  const hi = quality !== 'low';
   const inner = { size: 48, cx: -1, cz: -4 };
   const midR = { size: 150, cx: -6, cz: -20 };
   const inside = (b, m) => (x, z) => Math.abs(x - b.cx) < b.size / 2 - m && Math.abs(z - b.cz) < b.size / 2 - m;
   const geos = [
-    displacedPlane(inner.size, hi ? 400 : 240, inner.cx, inner.cz),
-    displacedPlane(midR.size, hi ? 280 : 180, midR.cx, midR.cz, inside(inner, 0.6)),
-    displacedPlane(520, 90, 0, 0, inside(midR, 6)),
+    displacedPlane(inner.size, TIER.terrain[0], inner.cx, inner.cz),
+    displacedPlane(midR.size, TIER.terrain[1], midR.cx, midR.cz, inside(inner, 0.6)),
+    displacedPlane(520, TIER.terrain[2], 0, 0, inside(midR, 6)),
   ];
   const group = new THREE.Group();
-  for (const g of geos) { const m = new THREE.Mesh(g, mat); m.receiveShadow = true; group.add(m); }
+  geos.forEach((g, i) => {
+    const m = new THREE.Mesh(g, mat); m.receiveShadow = true; group.add(m);
+    // only the inner patch is worth drawing into the water's mirror
+    if (i > 0) registerMesh(m, { tag: 'terrain', mirror: 0 });
+  });
   group.userData.material = mat;
   return group;
 }

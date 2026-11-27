@@ -1,7 +1,8 @@
 // Bundles src/ into one inline module and writes dist/index.html with the assets beside it.
 // three.js stays external (loaded from jsDelivr via the page's import map).
 import { build } from 'esbuild';
-import { readFileSync, writeFileSync, mkdirSync, cpSync, rmSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, cpSync, rmSync, readdirSync, existsSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 
 const out = await build({
   entryPoints: ['src/main.js'],
@@ -17,15 +18,17 @@ const html = readFileSync('index.template.html', 'utf8').replace('/*BUNDLE*/', (
 rmSync('dist', { recursive: true, force: true });
 mkdirSync('dist', { recursive: true });
 writeFileSync('dist/index.html', html);
-cpSync('assets', 'dist/assets', { recursive: true });
+// Assets are optimised into .opt/ (WebP textures at shipping sizes, a half-size set for phones, combined
+// foliage atlases, decimated models as glTF JSON with inlined buffers) and copied from there. Re-run when a source changes.
+const newest = (dir) => readdirSync(dir, { withFileTypes: true, recursive: true }).filter((e) => e.isFile()).reduce((t, e) => Math.max(t, statSync(`${e.parentPath ?? e.path}/${e.name}`).mtimeMs), 0);
+const srcTime = Math.max(newest('assets'), statSync('tools/optimize_assets.py').mtimeMs);
+if (!existsSync('.opt/.stamp') || statSync('.opt/.stamp').mtimeMs < srcTime) {
+  rmSync('.opt', { recursive: true, force: true });
+  execFileSync('python3', ['tools/optimize_assets.py', 'assets', '.opt'], { stdio: 'inherit' });
+  writeFileSync('.opt/.stamp', '');
+}
+cpSync('.opt', 'dist/assets', { recursive: true });
+rmSync('dist/assets/.stamp');
 // Optional intro splash; remove intro.js (and its <script> tag) to drop it.
 if (existsSync('intro.js')) cpSync('intro.js', 'dist/intro.js');
-// Artifacts only serve web file types, so every glTF becomes a .json with its buffer inlined as base64.
-for (const id of readdirSync('assets/models')) {
-  const dir = `assets/models/${id}`;
-  const gltf = JSON.parse(readFileSync(`${dir}/${id}.gltf`, 'utf8'));
-  for (const b of gltf.buffers) b.uri = 'data:application/octet-stream;base64,' + readFileSync(`${dir}/${b.uri}`).toString('base64');
-  writeFileSync(`dist/${dir}/${id}.json`, JSON.stringify(gltf));
-  rmSync(`dist/${dir}/${id}.gltf`); rmSync(`dist/${dir}/${id}.bin`);
-}
 console.log(`dist/index.html ${(html.length / 1024).toFixed(1)} KB`);

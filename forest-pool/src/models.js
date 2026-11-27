@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { manager, A } from './textures.js';
+import { TIER } from './tier.js';
 
 const loader = new GLTFLoader();
 const fileLoader = new THREE.FileLoader(manager);
@@ -33,7 +34,7 @@ export const modelJobs = [];
 export function loadModel(id, { centre = true } = {}) {
   const job = new Promise((resolve) => {
     const fail = (e) => { console.warn('model failed', id, e); resolve([]); };
-    fileLoader.load(A(`models/${id}/${id}.json`), (data) => {
+    fileLoader.load(A(`${TIER.lightModels ? 'm/' : ''}models/${id}/${id}.json`), (data) => {
       let glb;
       try { glb = toGLB(data); } catch (e) { fail(e); return; }
       loader.parse(glb, '', (gltf) => {

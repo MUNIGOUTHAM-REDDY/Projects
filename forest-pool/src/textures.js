@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { TIER } from './tier.js';
 
 export const manager = new THREE.LoadingManager();
 const loader = new THREE.TextureLoader(manager);
@@ -9,10 +10,13 @@ const cache = new Map();
 export function tex(path, { srgb = true, repeat = true, flipY = true } = {}) {
   const key = path + srgb + flipY;
   if (cache.has(key)) return cache.get(key);
-  const t = loader.load(path);
+  // everything ships as WebP; phones load the half-size set under assets/m/
+  let url = path.replace(/\.(jpg|png)$/, '.webp');
+  if (TIER.halfTextures) url = url.replace(/^assets\//, 'assets/m/');
+  const t = loader.load(url);
   t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = maxAniso;
+  t.anisotropy = TIER.halfTextures ? Math.min(2, maxAniso) : maxAniso;
   t.flipY = flipY;
   cache.set(key, t);
   return t;

@@ -7,20 +7,23 @@
 import * as THREE from 'three';
 import { tex, A } from './textures.js';
 import { chain, wind, worldPos, dapple, underwater, G } from './shaders.js';
+import { buildChunks } from './chunks.js';
+import { TIER } from './tier.js';
 
 // Mirrors tools/make_leaves.py
 const LEAF_V0 = 0.07, LEAF_V1 = 0.95;
 const leafHalfWidth = (t) => 0.30 * Math.pow(Math.max(0, Math.sin(Math.PI * Math.pow(t, 0.8))), 0.85) * (1 - 0.22 * t * t);
 
-export function leafGeometry() {
+export function leafGeometry({ petiole = true, flat = false } = {}) {
   // Local frame: petiole base at the origin, leaf runs along +Y (unit length), upper face toward +Z.
+  // The outline comes from the texture's alpha, so the mesh only needs the fold and the droop: 8 triangles.
   const pet = 0.12, blade = 1 - pet;
-  const st = [0, 0.3, 0.66, 1.0];
+  const st = flat ? [0, 1.0] : [0, 0.48, 1.0];                // fallen leaves: one folded quad pair is enough
   const pos = [], uv = [], idx = [];
   const L = LEAF_V1 - LEAF_V0;
   for (let i = 0; i < st.length; i++) {
     const t = st[i];
-    const hw = Math.max(0.03, leafHalfWidth(t) * 0.98) * (t === 0 ? 4 : 1);
+    const hw = flat ? 0.3 : i === 1 ? 0.3 : 0.2;
     const y = pet + t * blade;
     const droop = -0.16 * t * t + 0.03 * t;             // tip curls down
     const fold = 0.26;                                   // V-fold along the midrib
@@ -34,11 +37,13 @@ export function leafGeometry() {
     const a = i * 3;
     idx.push(a, a + 1, a + 3, a + 1, a + 4, a + 3, a + 1, a + 2, a + 4, a + 2, a + 5, a + 4);
   }
-  // petiole: a thin strip textured from the midrib
-  const b = pos.length / 3, pw = 0.012;
-  pos.push(-pw, 0, 0, pw, 0, 0, -pw, pet + 0.02, 0.004, pw, pet + 0.02, 0.004);
-  uv.push(0.495, 0.3, 0.505, 0.3, 0.495, 0.34, 0.505, 0.34);
-  idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2);
+  if (petiole) {
+    // a thin strip textured from the midrib
+    const b = pos.length / 3, pw = 0.012;
+    pos.push(-pw, 0, 0, pw, 0, 0, -pw, pet + 0.02, 0.004, pw, pet + 0.02, 0.004);
+    uv.push(0.495, 0.3, 0.505, 0.3, 0.495, 0.34, 0.505, 0.34);
+    idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2);
+  }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
@@ -47,16 +52,16 @@ export function leafGeometry() {
   return g;
 }
 
-export function cardGeometry(segs = 3, bend = 0.16, cup = 0.1) {
+export function cardGeometry(segs = 3, bend = 0.16, cup = 0.1, segsU = segs) {
   // Anchored at the bottom centre (the twig base), length along +Y, face toward +Z; droops and cups slightly.
   const pos = [], uv = [], idx = [];
-  for (let j = 0; j <= segs; j++) for (let i = 0; i <= segs; i++) {
-    const u = i / segs, v = j / segs, x = u - 0.5;
+  for (let j = 0; j <= segs; j++) for (let i = 0; i <= segsU; i++) {
+    const u = i / segsU, v = j / segs, x = u - 0.5;
     pos.push(x, v, -bend * v * v + cup * (0.25 - x * x) * 2 * v);
     uv.push(u, v);
   }
-  for (let j = 0; j < segs; j++) for (let i = 0; i < segs; i++) {
-    const a = j * (segs + 1) + i, b = a + segs + 1;
+  for (let j = 0; j < segs; j++) for (let i = 0; i < segsU; i++) {
+    const a = j * (segsU + 1) + i, b = a + segsU + 1;
     idx.push(a, a + 1, b, a + 1, b + 1, b);
   }
   const g = new THREE.BufferGeometry();
@@ -116,10 +121,12 @@ function foliageShading(mat, { card, dry = false }) {
   return mat;
 }
 
-function depthMaterial(map, cols, rows, flutter) {
+function depthMaterial(map, cols, rows, flutter, grow = 1) {
   const d = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: map ? 0.4 : 0, side: THREE.DoubleSide });
   if (map) atlasPatch(d, cols, rows, 'd');
   wind(d, { mode: 'inst', flutter });
+  // only a fraction of the foliage is drawn into the shadow map; it is enlarged there so the shade stays as deep
+  if (grow !== 1) chain(d, 'grow' + grow, (s) => { s.vertexShader = s.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>\n transformed *= ${grow.toFixed(2)};`); });
   return d;
 }
 
@@ -127,7 +134,7 @@ let leafMats = null;
 export function leafMaterials() {
   if (leafMats) return leafMats;
   const map = tex(A('leaf_atlas.webp'), { repeat: false });
-  const nrm = tex(A('leaf_atlas_n.jpg'), { srgb: false, repeat: false });
+  const nrm = TIER.halfTextures ? null : tex(A('leaf_atlas_n.jpg'), { srgb: false, repeat: false });
   const mat = new THREE.MeshStandardMaterial({
     map, normalMap: nrm, normalScale: new THREE.Vector2(0.8, 0.8), alphaTest: 0.5, side: THREE.DoubleSide,
     roughness: 0.54, metalness: 0, envMapIntensity: 0.55,
@@ -136,7 +143,7 @@ export function leafMaterials() {
   foliageShading(mat, { card: false });
   wind(mat, { mode: 'inst', flutter: 0.16 });
   // Leaf outlines are real geometry, so the shadow pass needs no texture.
-  const depth = depthMaterial(null, 4, 1, 0.16);
+  const depth = depthMaterial(null, 4, 1, 0.16, 1.6);
   return (leafMats = { mat, depth });
 }
 
@@ -144,7 +151,7 @@ const cardMats = {};
 export function cardMaterials(name, cols, rows) {
   if (cardMats[name]) return cardMats[name];
   const map = tex(A(`${name}.webp`), { repeat: false });
-  const nrm = tex(A(`${name}_n.jpg`), { srgb: false, repeat: false });
+  const nrm = TIER.halfTextures ? null : tex(A(`${name}_n.jpg`), { srgb: false, repeat: false });
   const mat = new THREE.MeshStandardMaterial({
     map, normalMap: nrm, normalScale: new THREE.Vector2(1.0, 1.0), alphaTest: 0.5, side: THREE.DoubleSide,
     roughness: 0.8, metalness: 0, envMapIntensity: 0.4,
@@ -156,15 +163,7 @@ export function cardMaterials(name, cols, rows) {
   return (cardMats[name] = { mat, depth });
 }
 
-// Every instanced plant mesh registers here. Instances are in random order, so drawing a prefix is an even
-// thinning of the whole: setDetail() is the geometry half of the dynamic quality control.
-export const lodMeshes = [];
-export function registerLod(mesh) { mesh.userData.fullCount = mesh.count; mesh.userData.liveCount = mesh.count; lodMeshes.push(mesh); return mesh; }
-export function setDetail(f) {
-  for (const m of lodMeshes) { m.userData.liveCount = Math.max(1, Math.floor(m.userData.fullCount * f)); m.count = m.userData.liveCount; }
-}
-
-// Collects instances (matrix, tint, sway weight, variant) and turns them into an InstancedMesh.
+// Collects instances (matrix, tint, sway weight, variant) and turns them into chunked, LOD-managed batches.
 export class Instances {
   constructor() { this.m = []; this.c = []; this.s = []; this.v = []; this.count = 0; }
   add(mat4, r, g, b, sway, phase, variant) {
@@ -173,45 +172,35 @@ export class Instances {
     this.c.push(r, g, b); this.s.push(sway, phase); this.v.push(variant);
     this.count++;
   }
-  // Instances are shuffled, so any prefix is an even subsample of the whole: the shadow and mirror passes
-  // draw only a fraction (which also leaves the gaps a real crown has, letting sun-flecks through).
-  build(geometry, materials, { castShadow = true, receiveShadow = true, shadowFrac = 1, mirrorFrac = 1 } = {}) {
-    const n = this.count, order = new Uint32Array(n);
-    for (let i = 0; i < n; i++) order[i] = i;
-    let seed = 12345;
-    for (let i = n - 1; i > 0; i--) { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; const j = seed % (i + 1); const t = order[i]; order[i] = order[j]; order[j] = t; }
-    const M = new Float32Array(n * 16), C = new Float32Array(n * 3), S = new Float32Array(n * 2), Vv = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      const k = order[i];
-      for (let q = 0; q < 16; q++) M[i * 16 + q] = this.m[k * 16 + q];
-      C[i * 3] = this.c[k * 3]; C[i * 3 + 1] = this.c[k * 3 + 1]; C[i * 3 + 2] = this.c[k * 3 + 2];
-      S[i * 2] = this.s[k * 2]; S[i * 2 + 1] = this.s[k * 2 + 1]; Vv[i] = this.v[k];
-    }
-    const g = geometry.clone();
-    g.setAttribute('aSway', new THREE.InstancedBufferAttribute(S, 2));
-    g.setAttribute('aVar', new THREE.InstancedBufferAttribute(Vv, 1));
-    const mesh = new THREE.InstancedMesh(g, materials.mat, n);
-    mesh.instanceMatrix.array.set(M);
-    mesh.instanceColor = new THREE.InstancedBufferAttribute(C, 3);
-    mesh.customDepthMaterial = materials.depth;
-    mesh.castShadow = castShadow; mesh.receiveShadow = receiveShadow;
-    mesh.computeBoundingSphere();
-    mesh.boundingSphere.radius += 2;
-    registerLod(mesh);
-    if (shadowFrac < 1) {
-      mesh.onBeforeShadow = () => { mesh.count = Math.floor(mesh.userData.liveCount * shadowFrac); };
-      mesh.onAfterShadow = () => { mesh.count = mesh.userData.liveCount; };
-    }
-    mesh.userData.mirrorFrac = mirrorFrac;
+  build(geometry, materials, { cell = 16, lod = {}, receiveShadow = true } = {}) {
+    const data = { n: this.count, M: this.m, C: this.c, attrs: { aSway: [this.s, 2], aVar: [this.v, 1] } };
+    const group = buildChunks(geometry, materials.mat, data, { cell, lod, depthMaterial: materials.depth, receiveShadow, pad: 2 });
     this.m = this.c = this.s = this.v = null;
-    return mesh;
+    return group;
   }
+}
+
+// Keeps only a fraction of what is added and enlarges the survivors, so cover stays roughly the same with fewer leaves.
+export function thinned(inst, frac) {
+  if (frac >= 1) return inst;
+  const s = Math.min(TIER.leafScaleCap, Math.pow(frac, -0.4));
+  let i = 0;
+  return {
+    get count() { return inst.count; },
+    add(m, r, g, b, sway, phase, variant) {
+      i++;
+      if ((Math.abs(Math.sin(i * 12.9898) * 43758.5453) % 1) > frac) return;
+      const e = m.elements;
+      for (let k = 0; k < 12; k++) if (k % 4 !== 3) e[k] *= s;
+      inst.add(m, r, g, b, sway, phase, variant);
+    },
+  };
 }
 
 // Ground plants (photoscanned cards/meshes with alpha): same translucent shading, wind grows with height.
 export function plantMaterials(dir, { amount = 0.05, flutter = 0.004, tint = [1, 1, 1], normalScale = 1, shadow = true } = {}) {
   const map = tex(A(`models/${dir}/diff.webp`), { repeat: false, flipY: false });
-  const nrm = tex(A(`models/${dir}/nor.jpg`), { srgb: false, repeat: false, flipY: false });
+  const nrm = TIER.halfTextures ? null : tex(A(`models/${dir}/nor.jpg`), { srgb: false, repeat: false, flipY: false });
   const mat = new THREE.MeshStandardMaterial({
     map, normalMap: nrm, normalScale: new THREE.Vector2(normalScale, normalScale), alphaTest: 0.5, side: THREE.DoubleSide,
     roughness: 0.6, metalness: 0, envMapIntensity: 0.8, color: new THREE.Color(...tint),
@@ -231,7 +220,7 @@ let litterMats = null;
 export function litterMaterials() {
   if (litterMats) return litterMats;
   const map = tex(A('leaf_atlas.webp'), { repeat: false });
-  const nrm = tex(A('leaf_atlas_n.jpg'), { srgb: false, repeat: false });
+  const nrm = TIER.halfTextures ? null : tex(A('leaf_atlas_n.jpg'), { srgb: false, repeat: false });
   const mat = new THREE.MeshStandardMaterial({ map, normalMap: nrm, normalScale: new THREE.Vector2(0.45, 0.45), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.8, metalness: 0, envMapIntensity: 0.35 });
   underwater(mat, { wet: false });
   atlasPatch(mat, 4, 1, 'm');

@@ -9,7 +9,13 @@ import { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js';
 import { heightAt, river, bankE, pathDist, rng, fbm, clamp, lerp, smoothstep, HERO_TREES, ROCKS } from './world.js';
 import { tex, pbr, A } from './textures.js';
 import { chain, wind, underwater, dapple, worldPos, G } from './shaders.js';
-import { leafGeometry, cardGeometry, leafMaterials, cardMaterials, Instances } from './foliage.js';
+import { leafGeometry, cardGeometry, leafMaterials, cardMaterials, Instances, thinned } from './foliage.js';
+import { registerMesh } from './chunks.js';
+import { TIER } from './tier.js';
+
+// Which tree the wood being built belongs to: lets the wood be merged per forest cell, so it can be culled.
+let CUR = null;
+let twigN = 0;
 import { LAYOUT } from './layout.js';
 
 // Hand edits to the locked layout: { at: [x, z], remove | to: [x, z] | type }.
@@ -68,6 +74,7 @@ class Limb {
 // --- Tube mesh along a limb -------------------------------------------------------
 function tube(limb, { radial = 8, flare = 0, flareLobes = 5, flareH = 0.5, seed = 0, lumps = 0, collar = 0, knots = null, barkTile = 1.2, ground = null, tintV = null } = {}) {
   const { path } = limb;
+  radial = Math.max(3, Math.round(radial * TIER.woodDetail));
   const P = path.p, n = P.length;
   const pos = [], uv = [], sway = [], col = [], idx = [];
   const uRep = Math.max(1, Math.round((2 * Math.PI * limb.r0) / barkTile));
@@ -120,6 +127,7 @@ function tube(limb, { radial = 8, flare = 0, flareLobes = 5, flareH = 0.5, seed 
   g.setAttribute('aSway', new THREE.Float32BufferAttribute(sway, 1));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setIndex(idx);
+  g.userData.at = CUR;
   g.computeVertexNormals();
   // close the shading seam
   const nr = g.attributes.normal;
@@ -351,9 +359,9 @@ function growHero(mains, r, out, tint, { branchCount = 14, twigDensity = 1 } = {
       for (const b2 of l2) {
         // leaves deep inside the crown sit in the shade of the shell
         const shade = outer1 * (0.48 + 0.58 * b2.tp);
-        out.twigs.push(tube(b2, { radial: 4, barkTile: 0.5 }));
+        if (TIER.twigs > 0 || (twigN % 2)) out.twigs.push(tube(b2, { radial: 3, barkTile: 0.5 }));
         const l3 = sprout(b2, { count: Math.max(1, b2.path.L * 8.5 * twigDensity), t0: 0.15, t1: 0.92, angle: [30, 62], len: (t, p) => Math.min(0.5, 0.16 + p.path.L * 0.45), rRatio: 0.6, rTip: 0.002, droop: 0.35, planar: true, wiggle: 0.18, segs: 3, flex: 0.03 }, r);
-        for (const tw of l3) { out.twigs.push(tube(tw, { radial: 3, barkTile: 0.5 })); leafTwig(tw, out.leaves, r, tint, { shade: shade * (0.85 + 0.2 * tw.tp) }); }
+        for (const tw of l3) { if ((twigN++ % 10) < TIER.twigs * 10) out.twigs.push(tube(tw, { radial: 3, barkTile: 0.5 })); leafTwig(tw, out.leaves, r, tint, { shade: shade * (0.85 + 0.2 * tw.tp) }); }
         leafTwig(b2, out.leaves, r, tint, { from: 0.45, shade });
       }
     }
@@ -448,12 +456,12 @@ function crown(axis, r, out, { t0, nL, lenBase, far, mid, tint, tintV, H }) {
     for (let i = 1; i <= segs; i++) { dir.y += 0.09 - 0.03 * i * (5 / segs); dir.x += (r() - 0.5) * 0.3; dir.z += (r() - 0.5) * 0.3; dir.normalize(); cur.addScaledVector(dir, len / segs); pts.push(cur.clone()); }
     const s0 = axis.swayAt(t);
     const limb = new Limb(new Path(pts), Math.min(axis.radiusAt(t) * 0.55, 0.014 + len * 0.016), 0.012, s0, s0 + 0.35, 1);
-    out.geos.push(tube(limb, { radial: far ? 4 : 6, collar: 0.5, barkTile: 0.8, tintV }));
+    out.geos.push(tube(limb, { radial: far ? 3 : 6, collar: far ? 0 : 0.5, barkTile: 0.8, tintV }));
     const shade = lerp(0.66, 1.05, f);                      // lower crown sits in the shade of the upper
     if (far) { sprayBranch(limb, out.boughs, r, tint, { spacing: 0.8, size: 2.7, from: 0.2, variants: 2, sag: 0.2, shade }); continue; }
     const branches = sprout(limb, { count: (mid ? 5 : 8.5) * len / 5.5, t0: 0.2, t1: 0.95, angle: [40, 65], len: (tt) => (0.9 + len * 0.26) * (1 - 0.4 * tt), rRatio: 0.45, rTip: 0.006, up: 0.04, droop: 0.12, planar: true, wiggle: 0.2, segs: 3, flex: 0.02, twist: 0.4 }, r);
     for (const b of branches) {
-      out.small.push(tube(b, { radial: 4, barkTile: 0.6, tintV }));
+      if ((twigN++ % 20) < TIER.branches * 20) out.small.push(tube(b, { radial: 4, barkTile: 0.6, tintV }));
       if (mid) sprayBranch(b, out.boughs, r, tint, { spacing: 0.9, size: 1.9, from: 0.2, variants: 2, shade });
       else sprayBranch(b, out.sprays, r, tint, { spacing: 0.3, size: 0.85, from: 0.12, shade });
     }
@@ -465,6 +473,7 @@ function crown(axis, r, out, { t0, nL, lenBase, far, mid, tint, tintV, H }) {
 // Forest trees come in several characters: tall clean-boled beeches, heavy old trees that fork into
 // co-dominant leaders, slender leaning poles with low crowns, and the occasional dead snag.
 function forestTree(x, z, r, out, kind, force = null, special = false) {
+  CUR = { x, z };
   const y0 = heightAt(x, z);
   const far = kind === 'far', mid = kind === 'mid';
   const k = r();
@@ -487,7 +496,7 @@ function forestTree(x, z, r, out, kind, force = null, special = false) {
     const j = i > 0 ? 0.36 : 0;
     ctrl.push(V(x + lx * h * (0.6 + f) + Math.cos(ba) * sb + Math.cos(bb) * sc2 + (r() - 0.5) * j, y0 - 0.6 + h, z + lz * h * (0.6 + f) + Math.sin(ba) * sb + Math.sin(bb) * sc2 + (r() - 0.5) * j));
   }
-  const path = smoothPath(ctrl, far ? 0.5 : 1.3);
+  const path = smoothPath(ctrl, far ? 0.4 : 1.3 * (0.4 + 0.6 * TIER.woodDetail) * 0.8);
   const trunk = new Limb(path, R, R * 0.16, 0, 1.0, 0);
   const snag = type === 'snag';
   // a snag keeps its girth and ends in a splintered break
@@ -522,6 +531,7 @@ function forestTree(x, z, r, out, kind, force = null, special = false) {
   const nL = far ? 10 : type === 'young' ? 13 + Math.floor(r() * 4) : 13 + Math.floor(r() * 5);
   const o = { far, mid, tint, tintV, H };
   if (sp2) out = { ...out, sprays: out.sprays2, boughs: out.boughs2 };
+  else if (far && out.boughsFar) out = { ...out, boughs: out.boughsFar };
   if (type === 'old' && !far) {
     // co-dominant leaders split off low in the crown and carry their own limbs
     const nLead = 1 + Math.floor(r() * 2);
@@ -545,6 +555,7 @@ function leafyBranch(b, r, out, tint, shade) {
 const nearViewer = (x, z) => Math.hypot(x - 0.3, z - 6.5) < 14 || Math.hypot(x - 0.8, z + 1.5) < 13 || Math.hypot(x + 5.4, z + 6.4) < 9;
 
 function sapling(x, z, r, out) {
+  CUR = { x, z };
   const y0 = heightAt(x, z);
   const H = 0.9 + r() * r() * 5.2, R = 0.012 + H * 0.007;
   const lean = r() * 6.28, la = 0.1 + r() * 0.25;
@@ -567,6 +578,7 @@ function sapling(x, z, r, out) {
 
 // Understory shrubs: several arching stems from one stool, densely leafed, 2-4 m tall.
 function shrub(x, z, r, out) {
+  CUR = { x, z };
   const y0 = heightAt(x, z);
   const n = 4 + Math.floor(r() * 5);
   const tint = [0.8 + r() * 0.2, 0.92 + r() * 0.12, 0.62 + r() * 0.25];
@@ -589,91 +601,144 @@ function shrub(x, z, r, out) {
   }
 }
 
-export function createTrees(quality) {
-  const hi = quality !== 'low';
+export function createTrees() {
+  const hi = TIER.name === 'high';
   const r = rng(1234);
-  const heroL = { geos: [], twigs: [], leaves: new Instances(), twigDensity: hi ? 1 : 0.45, rootGeos: [] };
-  const heroR = { geos: [], twigs: [], leaves: new Instances(), twigDensity: hi ? 1 : 0.45, rootGeos: [] };
+  const twigDensity = hi ? 1 : TIER.name === 'low' ? 0.45 : 0.3;
+  const mkHero = () => { const raw = new Instances(); return { geos: [], twigs: [], raw, leaves: thinned(raw, TIER.heroLeaves), twigDensity, rootGeos: [] }; };
+  const heroL = mkHero(), heroR = mkHero();
+  CUR = null;
   heroLeft(heroL, r);
   heroRight(heroR, r);
 
-  const forest = { geos: [], small: [], sprays: new Instances(), boughs: new Instances(), sprays2: new Instances(), boughs2: new Instances(), snags: [], leaves: new Instances(), contacts: [], roots: [], crowns: [], realNear: hi };
+  // Both species share one spray atlas and one bough atlas (species 2 in the right half), so a chunk is one batch.
+  const spraysI = new Instances(), boughsI = new Instances(), leavesI = new Instances();
+  const remap = (inst, f) => ({ add: (m, cr, cg, cb, sw, ph, v) => inst.add(m, cr, cg, cb, sw, ph, f(v)), get count() { return inst.count; } });
+  const mkForest = (sprays, boughs, leaves) => ({
+    geos: [], small: [], snags: [], roots: [], contacts: [], crowns: [], realNear: TIER.realUnderstory,
+    sprays: remap(sprays, (v) => (v >> 1) * 4 + (v & 1)), sprays2: remap(sprays, (v) => (v >> 1) * 4 + (v & 1) + 2),
+    boughs: remap(boughs, (v) => v), boughs2: remap(boughs, (v) => v + 2), leaves: thinned(leaves, Math.min(1, TIER.heroLeaves * 1.3)),
+  });
+  const forest = mkForest(spraysI, boughsI, leavesI);
   // The forest is planted from a locked list (src/layout.js) and every plant grows from its own seed, so moving,
   // removing or adding one tree changes nothing else.
   const seedOf = (x, z) => (Math.floor((x * 73.13 + z * 191.7 + 1000) * 1000) >>> 0) || 1;
-  const keep = (x, z, frac) => hi || (Math.abs(Math.sin(x * 51.7 + z * 13.3) * 9973.1) % 1) < frac;
+  const hash = (x, z) => Math.abs(Math.sin(x * 51.7 + z * 13.3) * 9973.1) % 1;
+  const keep = (x, z, frac) => hi || hash(x, z) < frac;
   const moved = (x, z) => {
     for (const e of EDITS) if (Math.hypot(x - e.at[0], z - e.at[1]) < 0.06) return e;
     return null;
   };
+  const nearK = TIER.name === 'mobile' ? 0.4 : 0.56;
   let nNear = 0, nFar = 0, nSap = 0, nShrub = 0;
+  const farList = [];
   for (let [x, z, kind, type, special] of LAYOUT.t) {
     const e = moved(x, z);
     if (e) { if (e.remove) continue; if (e.to) { x = e.to[0]; z = e.to[1]; } if (e.type) type = e.type; }
-    if (!keep(x, z, kind === 'far' ? 0.45 : 0.56) && !special) continue;
-    if (kind === 'near' && !hi && Math.hypot(x + 1, z + 3) > 20) kind = 'mid';
-    if (kind === 'far') nFar++; else nNear++;
+    if (kind === 'far') {
+      // beyond ~150 m the fog has swallowed everything
+      if (Math.hypot(x, z) > 150 || hash(x + 7, z) > TIER.farTrees) continue;
+      farList.push([x, z, type]); nFar++;
+      continue;
+    }
+    if (!keep(x, z, nearK) && !special) continue;
+    if (kind === 'near' && Math.hypot(x + 1, z + 3) > TIER.sprayRadius) kind = 'mid';
+    nNear++;
     forestTree(x, z, rng(seedOf(x, z)), forest, kind, type, !!special);
   }
-  for (const a of ADDS) { nNear++; forestTree(a[0], a[1], rng(seedOf(a[0], a[1])), forest, a[2], a[3]); }
+  for (const a of ADDS) { nNear++; forestTree(a[0], a[1], rng(seedOf(a[0], a[1])), forest, Math.hypot(a[0] + 1, a[1] + 3) > TIER.sprayRadius ? 'mid' : a[2], a[3]); }
   for (const s of SNAGS) forestTree(s[0], s[1], rng(seedOf(s[0], s[1])), forest, 'near', 'snag', true);
   for (const [x, z] of LAYOUT.s) {
     const e = moved(x, z);
-    if ((e && e.remove) || !keep(x, z, 0.47)) continue;
+    if ((e && e.remove) || !keep(x, z, TIER.name === 'mobile' ? 0.3 : 0.47)) continue;
     nSap++; sapling(x, z, rng(seedOf(x, z)), forest);
   }
   for (const [x, z] of LAYOUT.b) {
     const e = moved(x, z);
-    if ((e && e.remove) || !keep(x, z, 0.34)) continue;
+    if ((e && e.remove) || !keep(x, z, TIER.name === 'mobile' ? 0.22 : 0.34)) continue;
     nShrub++; shrub(x, z, rng(seedOf(x, z)), forest);
   }
+  CUR = null;
 
   const barkHero = barkMaterial('japanese_hackberry_bark', { tint: [1.5, 1.5, 1.38], desat: 0.5, moss: 0.85, lichen: 0.6, normal: 1.7, mossHeight: 1.3 });
   const barkForest = barkMaterial('japanese_hackberry_bark', { tint: [1.12, 1.12, 1.04], desat: 0.5, moss: 0.9, lichen: 0.4, normal: 1.4, mossHeight: 1.4 });
   const depth = barkDepth();
 
   const group = new THREE.Group();
-  const noReflect = [];
-  const addWood = (geos, mat, { shadow = true, reflect = true } = {}) => {
-    if (!geos.length) return null;
-    const m = new THREE.Mesh(mergeGeometries(geos), mat);
-    m.castShadow = shadow; m.receiveShadow = true; m.customDepthMaterial = depth;
-    group.add(m);
-    if (!reflect) noReflect.push(m);
-    return m;
+  // Wood is merged per forest cell (or into one mesh for the hero trees) and each cell is culled and LOD-managed on its own.
+  const addWood = (target, geos, mat, lod, cell = 0) => {
+    if (!geos.length) return;
+    const cells = new Map();
+    for (const g of geos) {
+      const at = g.userData.at;
+      const k = cell && at ? Math.floor(at.x / cell) + ',' + Math.floor(at.z / cell) : 'all';
+      let a = cells.get(k); if (!a) cells.set(k, (a = []));
+      a.push(g);
+    }
+    for (const list of cells.values()) {
+      const merged = mergeGeometries(list);
+      for (const g of list) g.dispose();
+      merged.computeBoundingSphere();
+      merged.boundingSphere.radius += 1.5;                    // room for wind sway
+      const m = new THREE.Mesh(merged, mat);
+      m.receiveShadow = true; m.customDepthMaterial = depth;
+      registerMesh(m, lod);
+      target.add(m);
+    }
   };
-  addWood([...heroL.geos, ...heroR.geos], barkHero);
-  addWood([...heroL.twigs, ...heroR.twigs], barkHero, { shadow: false, reflect: false });
-  addWood(forest.geos, barkForest);
+  const TRUNKS = { tag: 'wood', shadow: 1, mirror: 1, mirrorDist: 70, zero: 190, full: 190 };
+  const FINE = { tag: 'twigs', shadow: 0, mirror: 0, full: 36, zero: 36 };       // twigs and branchlets: nothing to see beyond ~45 m
+  addWood(group, [...heroL.geos, ...heroR.geos], barkHero, TRUNKS);
+  addWood(group, heroL.twigs, barkHero, FINE);
+  addWood(group, heroR.twigs, barkHero, FINE);
+  addWood(group, forest.geos, barkForest, TRUNKS, 48);
   // dead standing trunks: bark gone, wood bleached silver-grey
-  addWood(forest.snags, barkMaterial('tree_bark_03', { tint: [1.25, 1.2, 1.1], desat: 0.85, moss: 0.55, lichen: 0, normal: 2.2, mossHeight: 1.6 }));
+  addWood(group, forest.snags, TIER.halfTextures ? barkForest : barkMaterial('tree_bark_03', { tint: [1.25, 1.2, 1.1], desat: 0.85, moss: 0.55, lichen: 0, normal: 2.2, mossHeight: 1.6 }), TRUNKS);
   // washed-out bank roots: bare, dark, wet wood rather than mossy
-  addWood([...forest.roots, ...heroR.rootGeos], barkMaterial('japanese_hackberry_bark', { tint: [0.9, 0.85, 0.78], desat: 0.3, moss: 0.12, lichen: 0, normal: 1.6, mossHeight: 0.5 }));
-  addWood(forest.small, barkForest, { shadow: false, reflect: false });
+  addWood(group, [...forest.roots, ...heroR.rootGeos], barkMaterial('japanese_hackberry_bark', { tint: [0.9, 0.85, 0.78], desat: 0.3, moss: 0.12, lichen: 0, normal: 1.6, mossHeight: 0.5 }), { tag: 'roots', shadow: 1, mirror: 0, full: 60, zero: 60 });
+  addWood(group, forest.small, barkForest, FINE, 48);
 
-  const leafGeo = leafGeometry();
+  const leafGeo = leafGeometry({ petiole: false });
   const lm = leafMaterials();
-  const thinned = [];
-  for (const h of [heroL, heroR]) { const m = h.leaves.build(leafGeo, lm, { shadowFrac: 0.7, mirrorFrac: 0.3 }); thinned.push(m); group.add(m); }
-  if (forest.leaves.count) { const m = forest.leaves.build(leafGeo, lm, { shadowFrac: 0.7, mirrorFrac: 0.3 }); m.frustumCulled = false; thinned.push(m); group.add(m); }
-  const sprayM = cardMaterials('spray_atlas', 2, 2);
-  const boughM = cardMaterials('bough_atlas', 2, 1);
-  const sprays = forest.sprays.build(cardGeometry(2, 0.16, 0.1), sprayM, { shadowFrac: 0.5, mirrorFrac: 0.5 });
-  const boughs = forest.boughs.build(cardGeometry(2, 0.12, 0.08), boughM, { shadowFrac: 0.2, mirrorFrac: 0.6 });
-  thinned.push(sprays, boughs);
-  sprays.frustumCulled = false; boughs.frustumCulled = false;
-  group.add(sprays, boughs);
-  const sprays2 = forest.sprays2.build(cardGeometry(2, 0.2, 0.1), cardMaterials('spray2_atlas', 2, 2), { shadowFrac: 0.5, mirrorFrac: 0.5 });
-  const boughs2 = forest.boughs2.build(cardGeometry(2, 0.14, 0.08), cardMaterials('bough2_atlas', 2, 1), { shadowFrac: 0.2, mirrorFrac: 0.6 });
-  thinned.push(sprays2, boughs2);
-  sprays2.frustumCulled = false; boughs2.frustumCulled = false;
-  group.add(sprays2, boughs2);
+  const LEAVES = { tag: 'leaves', full: 13, zero: 42, min: 0.35, shadow: 0.34, mirror: 0, adaptive: true, keepFar: true };
+  group.add(heroL.raw.build(leafGeo, lm, { cell: 11, lod: LEAVES }), heroR.raw.build(leafGeo, lm, { cell: 11, lod: LEAVES }));
+  const underLeaves = leavesI.count;
+  if (leavesI.count) group.add(leavesI.build(leafGeo, lm, { cell: 16, lod: { ...LEAVES, zero: 40, min: 0.25, shadow: 0.25 } }));
+  const sprayM = cardMaterials('sprays_all', 4, 2);
+  const boughM = cardMaterials('boughs_all', 4, 1);
+  const sprayGeo = cardGeometry(2, 0.16, 0.1, 1), boughGeo = cardGeometry(2, 0.12, 0.08, 1);
+  const SPRAYS = { tag: 'sprays', full: 24, zero: 65, min: 0.3, shadow: 0.45, mirror: 0.25, mirrorDist: 40, adaptive: true, keepFar: true };
+  const BOUGHS = { tag: 'boughs', full: 80, zero: 150, min: 0.45, shadow: 0.25, mirror: 0.5, mirrorDist: 90, adaptive: true, keepFar: true };
+  const counts = { near: nNear, far: nFar, saplings: nSap, heroLeaves: heroL.raw.count + heroR.raw.count, underLeaves, sprays: spraysI.count, boughs: boughsI.count };
+  group.add(spraysI.build(sprayGeo, sprayM, { cell: 26, lod: SPRAYS }), boughsI.build(boughGeo, boughM, { cell: 40, lod: BOUGHS }));
 
-  group.userData.crowns = [...forest.crowns, { x: HERO_TREES.left.x - 0.5, z: HERO_TREES.left.z - 1.2, r: 7.5 }, { x: HERO_TREES.right.x - 0.5, z: HERO_TREES.right.z - 0.4, r: 6.5 }];
+  // The far ring is grown after the first frames, one 48 m cell at a time, so the scene appears with what is near.
+  const farCells = new Map();
+  for (const t of farList) {
+    const k = Math.floor(t[0] / 96) + ',' + Math.floor(t[1] / 96);
+    let a = farCells.get(k); if (!a) farCells.set(k, (a = []));
+    a.push(t);
+  }
+  const queue = [...farCells.values()].sort((a, b) => Math.hypot(a[0][0], a[0][1]) - Math.hypot(b[0][0], b[0][1]));
+  const growCell = (list) => {
+    const b = new Instances();
+    const f = mkForest(b, b, b);
+    f.sprays = f.boughs; f.sprays2 = f.boughs2;
+    for (const [x, z, type] of list) forestTree(x, z, rng(seedOf(x, z)), f, 'far', type);
+    CUR = null;
+    addWood(group, [...f.geos, ...f.snags], barkForest, { tag: 'farwood', shadow: 0, mirror: 1, mirrorDist: 50, full: 170, zero: 170 });
+    group.add(b.build(boughGeo, boughM, { cell: 1000, lod: { ...BOUGHS, tag: 'farboughs', shadow: 0, mirror: 0.4, mirrorDist: 60, zero: 170, min: 0.4, full: 60 } }));
+  };
+  group.userData.stream = (sync) => {
+    if (sync) { for (const c of queue) growCell(c); queue.length = 0; return; }
+    const step = () => { const c = queue.shift(); if (!c) return; growCell(c); setTimeout(step, 30); };
+    setTimeout(step, 200);
+  };
+
+  // far crowns are approximated for the canopy-shade map (they are grown later)
+  group.userData.crowns = [...forest.crowns, ...farList.map(([x, z]) => ({ x, z, r: 6 })), { x: HERO_TREES.left.x - 0.5, z: HERO_TREES.left.z - 1.2, r: 7.5 }, { x: HERO_TREES.right.x - 0.5, z: HERO_TREES.right.z - 0.4, r: 6.5 }];
   group.userData.contacts = forest.contacts;
-  group.userData.noReflect = noReflect;
-  group.userData.thinned = thinned;
-  group.userData.counts = { near: nNear, far: nFar, saplings: nSap, heroLeaves: heroL.leaves.count + heroR.leaves.count, underLeaves: 0, sprays: forest.sprays.count, boughs: forest.boughs.count };
-  console.warn('trees', JSON.stringify(group.userData.counts));
+  group.userData.counts = counts;
+  console.info('trees', JSON.stringify(counts));
   return group;
 }

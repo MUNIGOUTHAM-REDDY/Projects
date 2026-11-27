@@ -5,14 +5,15 @@ import * as THREE from 'three';
 import { heightAt, rng, WATER_Y } from './world.js';
 import { sampleBake } from './bake.js';
 import { litterMaterials, leafGeometry } from './foliage.js';
+import { TIER } from './tier.js';
 
 export function createFallingLeaves(quality) {
-  const N = quality === 'low' ? 50 : 130;
+  const N = TIER.name === 'high' ? 110 : TIER.name === 'low' ? 50 : 24;
   const SCALE = Number(new URLSearchParams(location.search).get('leafscale') || 1);
   const g = leafGeometry().clone();
   g.setAttribute('aVar', new THREE.InstancedBufferAttribute(new Float32Array(N).map((_, i) => i % 4), 1));
   const mesh = new THREE.InstancedMesh(g, litterMaterials().mat, N);
-  mesh.frustumCulled = false; mesh.castShadow = true; mesh.receiveShadow = true;
+  mesh.frustumCulled = false; mesh.castShadow = false; mesh.receiveShadow = true;
   mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(N * 3), 3);
   const r = rng(909);
   const L = [];
@@ -112,7 +113,7 @@ export function createFallingLeaves(quality) {
   }
   // The first few leaves belong to the viewer: they always fall somewhere in the 3-15 m ahead of the camera,
   // and are re-dropped upwind and overhead when they have landed or been left behind.
-  const LOCAL = quality === 'low' ? 8 : 12;
+  const LOCAL = TIER.name === 'high' ? 12 : 8;
   const fwd = new THREE.Vector3();
   function respawnLocal(o, cam, target, fresh) {
     spawn(o, fresh);

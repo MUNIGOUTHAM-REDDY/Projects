@@ -6,6 +6,8 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
 import { RIVER_SAMPLES, WATER_Y, LEDGES } from './world.js';
 import { G, NOISE_GLSL, GOBO_GLSL } from './shaders.js';
 import { tex, A } from './textures.js';
+import { TIER } from './tier.js';
+import { mirrorBegin, mirrorEnd } from './chunks.js';
 
 const WaterShader = {
   name: 'RiverWater',
@@ -196,10 +198,11 @@ function ribbonGeometry() {
 }
 
 export function createWater(quality, sun) {
-  const res = quality === 'low' ? 512 : 1024;
+  const res = TIER.mirrorSize;
   const water = new Reflector(ribbonGeometry(), {
     shader: WaterShader, textureWidth: res, textureHeight: res, clipBias: 0.02, multisample: 0, type: THREE.HalfFloatType,
   });
+  if (TIER.halfTextures) water.getRenderTarget().texture.type = THREE.UnsignedByteType;   // phones: 8-bit mirror
   water.rotation.x = -Math.PI / 2;
   water.position.y = WATER_Y;
   const m = water.material;
@@ -219,18 +222,19 @@ export function createWater(quality, sun) {
   return water;
 }
 
-// Hide objects that should not appear in (or would be too costly to draw into) the reflection,
-// and draw only a fraction of the instanced foliage there.
-export function excludeFromReflection(water, objects, thinned = []) {
+// The mirror pass draws a reduced world (see chunks.js) and is refreshed only every few frames.
+export function excludeFromReflection(water, objects, still) {
   const orig = water.onBeforeRender;
+  let frame = 0;
   water.onBeforeRender = function (...args) {
-    // lists may hold arrays that fill in as models finish loading
-    const list = objects.flat();
-    const vis = list.map((o) => o.visible);
-    list.forEach((o) => (o.visible = false));
-    thinned.forEach((m) => (m.count = Math.floor(m.userData.liveCount * m.userData.mirrorFrac)));
+    // The shadow map refreshes on odd frames, the mirror on even ones, so no frame pays for both.
+    const f = frame++;
+    if (!still && f > 0 && (f % 2 !== 1 || ((f - 1) / 2) % TIER.mirrorEvery !== 0)) return;
+    const vis = objects.map((o) => o.visible);
+    objects.forEach((o) => (o.visible = false));
+    mirrorBegin();
     orig.apply(this, args);
-    thinned.forEach((m) => (m.count = m.userData.liveCount));
-    list.forEach((o, i) => (o.visible = vis[i]));
+    mirrorEnd();
+    objects.forEach((o, i) => (o.visible = vis[i]));
   };
 }

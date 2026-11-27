@@ -3,7 +3,9 @@
 // glossy at the waterline, and gains extra moss on its upward faces. Plus cobbles along the water's
 // edge, a fallen trunk in the riffle and a stump.
 import * as THREE from 'three';
-import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeVertices, mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { buildChunks, registerMesh } from './chunks.js';
+import { TIER } from './tier.js';
 import { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js';
 import { heightAt, rng, river, bankE, pathDist, ROCKS, fbm, smoothstep, PATH } from './world.js';
 import { tex, A } from './textures.js';
@@ -66,7 +68,7 @@ function rockMaterial(set) {
 }
 
 function pebbleGeometry(seed) {
-  let g = new THREE.IcosahedronGeometry(1, 2);
+  let g = new THREE.IcosahedronGeometry(1, 1);
   g.deleteAttribute('uv'); g.deleteAttribute('normal');
   g = mergeVertices(g);
   const p = g.attributes.position, v = new THREE.Vector3();
@@ -99,17 +101,18 @@ function pebbleMaterial() {
   return mat;
 }
 
-export function createRocks(quality) {
+export function createRocks() {
   const group = new THREE.Group();
-  const noReflect = [];
-  group.userData.noReflect = noReflect;
   const r = rng(42);
   Promise.all([loadModel('rock_moss_set_01'), loadModel('rock_moss_set_02')]).then(([a, b]) => {
     const mats = [rockMaterial('rock_moss_set_01'), rockMaterial('rock_moss_set_02')];
     const all = [...a.map((v) => ({ ...v, mat: mats[0] })), ...b.map((v) => ({ ...v, mat: mats[1] }))];
+    if (!all.length) return;
+    // Boulders are baked into one mesh per 24 m cell and material: a handful of draw calls, each culled on its own.
+    const cells = new Map();
+    const m = new THREE.Object3D();
     ROCKS.forEach((rk, i) => {
       const v = all[(i * 5 + 3) % all.length];
-      const m = new THREE.Mesh(v.geo, v.mat);
       let sc = rk.r / v.radius;
       let h = v.height * sc;
       const bed = heightAt(rk.x, rk.z);
@@ -122,14 +125,22 @@ export function createRocks(quality) {
       const sinkK = bed > -0.2 && rk.kind === 'r' ? Math.max(rk.sink, 0.45) : Math.max(rk.sink, rk.kind === 'r' ? 0.3 : rk.sink);
       const yBase = rk.sub ? Math.max(bed - h * 0.6, Math.min(bed - h * rk.sink, -(0.04 + r() * 0.12) - h)) : bed - h * sinkK;
       m.position.set(rk.x, yBase, rk.z);
-      m.castShadow = true; m.receiveShadow = true;
-      group.add(m);
+      m.updateMatrix();
+      const key = String(mats.indexOf(v.mat));
+      let c = cells.get(key); if (!c) cells.set(key, (c = { mat: v.mat, geos: [] }));
+      c.geos.push(v.geo.clone().applyMatrix4(m.matrix));
     });
+    for (const c of cells.values()) {
+      const mesh = new THREE.Mesh(mergeGeometries(c.geos), c.mat);
+      mesh.receiveShadow = true;
+      registerMesh(mesh, { tag: 'rocks', shadow: 1, mirror: 1, mirrorDist: 45, full: 160, zero: 160 });
+      group.add(mesh);
+    }
   });
 
   // Cobbles and pebbles: thick along the waterline and on the gravel bars, scattered over the riffles.
-  const count = quality === 'low' ? 1800 : 5200;
-  const geos = [pebbleGeometry(1.3), pebbleGeometry(5.7), pebbleGeometry(9.1)];
+  const count = Math.round(5200 * Math.max(TIER.count, 0.35));
+  const geos = [pebbleGeometry(1.3)];
   const mat = pebbleMaterial();
   const per = geos.map(() => []);
   let n = 0, tries = 0;
@@ -150,11 +161,11 @@ export function createRocks(quality) {
     p.set(x, y - size * (0.2 + r() * 0.3), z); s.set(size * (0.6 + r() * 1.1), size * (0.4 + r() * 0.7), size * (0.6 + r() * 0.8));
     m4.compose(p, q, s);
     const v = 0.6 + r() * 0.55, w = r();
-    per[n % 3].push({ m: m4.clone(), c: [v * (0.95 + w * 0.12), v * (0.93 + w * 0.06), v * (0.86 - w * 0.06)] });
+    per[0].push({ m: m4.clone(), size, c: [v * (0.95 + w * 0.12), v * (0.93 + w * 0.06), v * (0.86 - w * 0.06)] });
     n++;
   }
   // grit and small stones trodden into the trail
-  const nPath = quality === 'low' ? 250 : 700;
+  const nPath = Math.round(700 * TIER.count);
   for (let k = 0; k < nPath; k++) {
     const seg = Math.floor(r() * (PATH.length - 3)) + 2, f = r();
     const x = PATH[seg][0] + (PATH[seg + 1][0] - PATH[seg][0]) * f + (r() + r() - 1) * 0.75, z = PATH[seg][1] + (PATH[seg + 1][1] - PATH[seg][1]) * f + (r() - 0.5) * 0.4;
@@ -164,25 +175,25 @@ export function createRocks(quality) {
     p.set(x, heightAt(x, z) - size * 0.45, z); s.set(size * (0.7 + r() * 0.9), size * (0.5 + r() * 0.4), size * (0.7 + r() * 0.7));
     m4.compose(p, q, s);
     const v = 0.85 + r() * 0.5;
-    per[k % 3].push({ m: m4.clone(), c: [v, v * 0.94, v * 0.82] });
+    per[0].push({ m: m4.clone(), size, c: [v, v * 0.94, v * 0.82] });
   }
-  per.forEach((list, i) => {
-    const inst = new THREE.InstancedMesh(geos[i], mat, list.length);
-    const c = new THREE.Color();
-    list.forEach((o, k) => { inst.setMatrixAt(k, o.m); inst.setColorAt(k, c.setRGB(...o.c)); });
-    inst.castShadow = true; inst.receiveShadow = true; inst.frustumCulled = false;
-    noReflect.push(inst);
-    group.add(inst);
-  });
+  {
+    // Stored largest first within each chunk: with distance only the cobbles remain, then nothing.
+    const list = per[0], n = list.length, M = new Float32Array(n * 16), C = new Float32Array(n * 3), key = new Float32Array(n);
+    list.forEach((o, k) => { o.m.toArray(M, k * 16); C.set(o.c, k * 3); key[k] = o.size; });
+    group.add(buildChunks(geos[0], mat, { n, M, C, key }, { cell: 18, lod: { tag: 'pebbles', full: 8, zero: 36, min: 0.06, shadow: 0, mirror: 0 }, pad: 0.1 }));
+  }
 
   // A fallen trunk lying from the bank into the riffle, and an old stump beside the trail.
   const wood = (id, place) => loadModel(id).then(([v]) => {
+    if (!v) return;
     const d = `models/${id}`, o = { repeat: false, flipY: false };
     const mat = new THREE.MeshStandardMaterial({ map: tex(A(`${d}/diff.jpg`), o), normalMap: tex(A(`${d}/nor.jpg`), { ...o, srgb: false }), roughness: 0.9, metalness: 0 });
     bedded(mat, { moss: 0.8, blend: 0.1, key: id });
     const m = new THREE.Mesh(v.geo, mat);
     place(m, v);
-    m.castShadow = true; m.receiveShadow = true;
+    m.receiveShadow = true;
+    registerMesh(m, { tag: 'logs', shadow: 1, mirror: 1, mirrorDist: 45, full: 150, zero: 150 });
     group.add(m);
   });
   wood('dead_tree_trunk', (m) => {

@@ -13,6 +13,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { G, NOISE_GLSL, GOBO_GLSL } from './shaders.js';
+import { TIER } from './tier.js';
 
 const FS_VERT = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
 
@@ -53,7 +54,7 @@ const VolumetricShader = {
       vec3 rd = wp - ro;
       float len = min(length(rd), 46.0);
       rd = normalize(rd);
-      const int N = 36;
+      const int N = VOL_STEPS;
       float jit = fract(52.9829189 * fract(dot(gl_FragCoord.xy + uSeed * 17.0, vec2(0.06711056, 0.00583715))));
       float acc = 0.0;
       float dt = len / float(N);
@@ -189,34 +190,35 @@ class ScenePass extends Pass {
     this.rtScene = new THREE.WebGLRenderTarget(1, 1, { ...opt, depthTexture: this.depthTexture });
     this.rtComp = new THREE.WebGLRenderTarget(1, 1, { ...opt, depthTexture: this.depthTexture });
     this.rtVol = new THREE.WebGLRenderTarget(1, 1, { ...opt, depthBuffer: false });
-    this.aoScale = quality === 'low' ? 0.5 : 1;
+    this.aoScale = 0.5;                               // AO is low-frequency: half resolution, then a depth-aware blur
     this.gtao = new GTAOPass(scene, camera, 4, 4);
     this.gtao.setGBuffer(this.depthTexture, undefined);
     this.gtao.normalRenderTarget.dispose();
     this.gtao.normalRenderTarget = { setSize() {}, dispose() {} };
-    this.gtao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.2, thickness: 1.3, scale: 1.5, samples: quality === 'low' ? 8 : 16, distanceFallOff: 1, screenSpaceRadius: false });
-    this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, radiusExponent: 1.5, rings: 2, samples: quality === 'low' ? 8 : 16 });
+    this.gtao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.2, thickness: 1.3, scale: 1.5, samples: TIER.name === 'high' ? 12 : 8, distanceFallOff: 1, screenSpaceRadius: false });
+    this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, radiusExponent: 1.5, rings: 2, samples: TIER.name === 'high' ? 12 : 8 });
     this.gtao.blendIntensity = 1.0;
-    this.volMat = new THREE.ShaderMaterial(VolumetricShader);
+    this.volMat = new THREE.ShaderMaterial({ ...VolumetricShader, defines: { VOL_STEPS: Math.max(1, TIER.volumetric) } });
     this.compMat = new THREE.ShaderMaterial(CompositeShader);
     this.copyMat = new THREE.ShaderMaterial({ uniforms: { t: { value: null } }, vertexShader: FS_VERT, fragmentShader: 'uniform sampler2D t; varying vec2 vUv; void main(){ gl_FragColor = texture2D(t, vUv); }', depthTest: false, depthWrite: false });
     for (const m of [this.volMat, this.compMat]) { m.depthTest = false; m.depthWrite = false; }
     this.fsq = new FullScreenQuad(this.volMat);
-    this.ao = true; this.volumetrics = true; this.dof = quality !== 'low';
+    this.ao = TIER.ao; this.volumetrics = TIER.volumetric > 0; this.dof = TIER.dof;
     this.needsSwap = true;
     this.frame = 0;
   }
   setSize(w, h) {
     this.rtScene.setSize(w, h); this.rtComp.setSize(w, h);
-    this.rtVol.setSize(Math.ceil(w / 2), Math.ceil(h / 2));
-    this.gtao.setSize(Math.ceil(w * this.aoScale), Math.ceil(h * this.aoScale));
+    if (TIER.volumetric > 0) this.rtVol.setSize(Math.ceil(w / 2), Math.ceil(h / 2));
+    if (TIER.ao) this.gtao.setSize(Math.ceil(w * this.aoScale), Math.ceil(h * this.aoScale));
     this.compMat.uniforms.uRes.value.set(w, h);
     this.water.material.uniforms.uRes.value.set(w, h);
   }
   render(renderer, writeBuffer) {
     const { scene, camera, water, sun } = this;
     const oldAuto = renderer.autoClear;
-    if (this.still || (this.frame2 = (this.frame2 || 0) + 1) % 2 === 1) renderer.shadowMap.needsUpdate = true;
+    // The sun does not move; the shadow map only needs refreshing for the sway of branches, a few times a second.
+    if (this.still || (this.frame2 = (this.frame2 || 0) + 1) % TIER.shadowEvery === 1) renderer.shadowMap.needsUpdate = true;
     camera.layers.set(0);
     renderer.autoClear = true;
     renderer.setRenderTarget(this.rtScene);
@@ -269,10 +271,10 @@ export function createPipeline({ renderer, scene, camera, water, sun, quality, s
   scenePass.still = still;
   composer.addPass(scenePass);
   const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.22, 0.4, 0.95);
-  composer.addPass(bloom);
+  if (TIER.bloom) composer.addPass(bloom);
   composer.addPass(new OutputPass());
   const fxaa = new ShaderPass(FXAAShader);
-  composer.addPass(fxaa);
+  if (TIER.fxaa) composer.addPass(fxaa);
   const grade = new ShaderPass(GradeShader);
   composer.addPass(grade);
   renderer.shadowMap.autoUpdate = false;

@@ -3,41 +3,39 @@
 import * as THREE from 'three';
 import { heightAt, river, bankE, pathMask, pathDist, fbm, rng, smoothstep, HERO_TREES, ROCKS } from './world.js';
 import { tex, A } from './textures.js';
-import { plantMaterials, litterMaterials, leafGeometry, Instances, registerLod } from './foliage.js';
+import { plantMaterials, litterMaterials, leafGeometry, Instances } from './foliage.js';
+import { buildChunks } from './chunks.js';
+import { TIER } from './tier.js';
 import { loadModel } from './models.js';
 import { underwater, dapple } from './shaders.js';
 
 const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), s = new THREE.Vector3();
 
-function instanced(variants, lists, materials, { cast = true } = {}) {
-  const out = [];
+// One chunked, distance-managed batch per model variant. `lod` may be a function of the variant name.
+function instanced(variants, lists, materials, lod, cell = 16) {
+  const group = new THREE.Group();
   variants.forEach((v, i) => {
     const list = lists[i];
     if (!list || !list.length) return;
-    const inst = new THREE.InstancedMesh(v.geo, materials.mat, list.length);
-    const c = new THREE.Color();
+    const n = list.length, M = new Float32Array(n * 16), C = new Float32Array(n * 3);
     list.forEach((o, k) => {
       if (o.q) q.copy(o.q); else { e.set(o.tx || 0, o.rot, o.tz || 0); q.setFromEuler(e); }
       p.set(o.x, o.y, o.z); s.set(o.s, o.s * (o.sy || 1), o.s);
-      inst.setMatrixAt(k, m4.compose(p, q, s));
-      inst.setColorAt(k, c.setRGB(o.c[0], o.c[1], o.c[2]));
+      m4.compose(p, q, s).toArray(M, k * 16);
+      C[k * 3] = o.c[0]; C[k * 3 + 1] = o.c[1]; C[k * 3 + 2] = o.c[2];
     });
-    inst.castShadow = cast; inst.receiveShadow = true; inst.frustumCulled = false;
-    if (materials.depth) inst.customDepthMaterial = materials.depth;
-    registerLod(inst);
-    out.push(inst);
+    group.add(buildChunks(v.geo, materials.mat, { n, M, C }, { cell, lod: typeof lod === 'function' ? lod(v.name) : lod, depthMaterial: materials.depth, pad: 0.3 }));
   });
-  return out;
+  return group;
 }
 
 const nearRock = (x, z, pad) => ROCKS.some((k) => Math.hypot(k.x - x, k.z - z) < k.r * 0.85 + pad);
 const nearHero = (x, z, d) => Math.hypot(x - HERO_TREES.left.x, z - HERO_TREES.left.z) < d || Math.hypot(x - HERO_TREES.right.x, z - HERO_TREES.right.z) < d;
 
-export function createGroundCover(quality) {
-  const hi = quality !== 'low';
+export function createGroundCover() {
+  const K = TIER.count;
   const group = new THREE.Group();
   const contacts = [];
-  const noReflect = [];
   const r = rng(555);
 
   // --- Ferns: beds around boulders and tree bases and along the banks -------------------
@@ -59,7 +57,7 @@ export function createGroundCover(quality) {
     for (let i = 0; i < 9; i++) { const a = r() * 6.283, d = 0.8 + r() * 1.5; addFern(h.x + Math.cos(a) * d, h.z + Math.sin(a) * d, 0.8 + r() * 0.8); }
   }
   let tries = 0;
-  const fernTarget = hi ? 760 : 300;
+  const fernTarget = Math.round(520 * Math.max(K, 0.4));
   while (ferns.length < fernTarget && tries++ < 20000) {
     const a = r() * 6.283, d = 2 + Math.pow(r(), 0.8) * 46;
     const x = -1 + Math.cos(a) * d, z = -3 + Math.sin(a) * d;
@@ -70,16 +68,19 @@ export function createGroundCover(quality) {
   }
   loadModel('fern_02').then((variants) => {
     const lists = variants.map(() => []);
-    ferns.forEach((f, i) => lists[(i * 7 + (i >> 2)) % variants.length].push(f));
+    // the two lush, heavy variants (b, c) go to a share of the ferns; the rest use the light ones (a, d)
+    const big = variants.map((v, i) => (/_b$|_c$/.test(v.name) ? i : -1)).filter((i) => i >= 0), small = variants.map((v, i) => (/_a$/.test(v.name) ? i : -1)).filter((i) => i >= 0);
+    ferns.forEach((f, i) => { const h = Math.abs(Math.sin(i * 91.7) * 4375.5) % 1;
+      // the lush ones grow where people stand and look: beside the trail and at the landing
+      const hero = TIER.name !== 'mobile' && (Math.hypot(f.x - 0.6, f.z - 6.0) < 6 || Math.hypot(f.x - 1.0, f.z - 2.5) < 4);
+      const set = h < (hero ? 0.7 : TIER.fernBig) && big.length ? big : small; lists[set[i % set.length]].push(f); });
     const mats = plantMaterials('fern_02', { amount: 0.05, flutter: 0.006, tint: [0.62, 0.78, 0.42] });
-    const meshes = instanced(variants, lists, mats);
-    noReflect.push(...meshes);
-    group.add(...meshes);
+    group.add(instanced(variants, lists, mats, { tag: 'ferns', full: 18, zero: 36, min: 0, shadow: 0.25, mirror: 0 }, 32));
   });
 
   // --- Grass tufts: along the banks, the trail's shoulders and in brighter gaps ---------
   const grass = [];
-  const grassTarget = hi ? 3400 : 1200;
+  const grassTarget = Math.round(800 * K);
   tries = 0;
   while (grass.length < grassTarget && tries++ < 60000) {
     const a = r() * 6.283, d = Math.pow(r(), 0.85) * 26;
@@ -96,7 +97,7 @@ export function createGroundCover(quality) {
     grass.push({ x, z, y: heightAt(x, z) - 0.015, s: 0.8 + r() * 0.8 + smoothstep(1.5, 0.1, e2) * 0.35, sy: 0.8 + r() * 0.5, rot: r() * 6.283, tx: (r() - 0.5) * 0.2, tz: (r() - 0.5) * 0.2, c: [v * (0.85 + dry * 0.25), v * 0.95, v * (0.6 + r() * 0.25)] });
   }
   // Bank-edge sedge and grass: rooted on the lip of the bank and bowing out over the water, breaking the shoreline.
-  const edgeTarget = hi ? 1500 : 500;
+  const edgeTarget = Math.round(1100 * K);
   const yaw = new THREE.Quaternion(), tilt = new THREE.Quaternion(), axis = new THREE.Vector3();
   tries = 0; let nEdge = 0;
   while (nEdge < edgeTarget && tries++ < edgeTarget * 40) {
@@ -120,7 +121,7 @@ export function createGroundCover(quality) {
   }
 
   const fuzz = [];
-  const fuzzTarget = hi ? 9000 : 2500;
+  const fuzzTarget = Math.round(7000 * K);
   tries = 0;
   while (fuzz.length < fuzzTarget && tries++ < fuzzTarget * 8) {
     const a = r() * 6.283, d = Math.pow(r(), 0.75) * 17;
@@ -132,7 +133,7 @@ export function createGroundCover(quality) {
   }
   loadModel('grass_medium_01').then((variants) => {
     // light-weight pieces only; the big clumps are thousands of triangles each
-    const use = variants.filter((v) => /tall|tiny/.test(v.name));
+    const use = variants.filter((v) => /tall_a|tiny_d/.test(v.name));
     const lists = use.map(() => []);
     grass.forEach((g, i) => {
       let k = Math.floor(r() * use.length);
@@ -144,14 +145,12 @@ export function createGroundCover(quality) {
     const tiny = use.map((v, i) => (/tiny/.test(v.name) ? i : -1)).filter((i) => i >= 0);
     fuzz.forEach((g) => lists[tiny[Math.floor(r() * tiny.length)]].push(g));
     const mats = plantMaterials('grass_medium_01', { amount: 0.18, flutter: 0.01, tint: [0.62, 0.78, 0.4], shadow: false });
-    const meshes = instanced(use, lists, mats, { cast: false });
-    noReflect.push(...meshes);
-    group.add(...meshes);
+    group.add(instanced(use, lists, mats, (name) => (/tiny/.test(name) ? { tag: 'grass', full: 9, zero: 20 } : { tag: 'grass', full: 12, zero: 28 }), 20));
   });
 
   // --- Celandine: low glossy leaves and a few yellow flowers in damp, mossy patches ------
   const herbs = [];
-  const herbTarget = hi ? 1000 : 400;
+  const herbTarget = Math.round(360 * K);
   tries = 0;
   while (herbs.length < herbTarget && tries++ < 40000) {
     const a = r() * 6.283, d = Math.pow(r(), 0.8) * 24;
@@ -164,19 +163,17 @@ export function createGroundCover(quality) {
     herbs.push({ x, z, y: heightAt(x, z) - 0.012, s: 0.8 + r() * 0.55, sy: 0.9 + r() * 0.3, rot: r() * 6.283, tx: (r() - 0.5) * 0.15, tz: (r() - 0.5) * 0.15, c: [v, v, v] });
   }
   loadModel('celandine_01').then((variants) => {
-    const use = variants.filter((v) => /_a_|_b_|_e_/.test(v.name));
+    const use = variants.filter((v) => /_e_/.test(v.name));
     const lists = use.map(() => []);
     herbs.forEach((h, i) => lists[i % use.length].push(h));
     const mats = plantMaterials('celandine_01', { amount: 0.06, flutter: 0.004, tint: [0.7, 0.8, 0.5], shadow: false });
-    const meshes = instanced(use, lists, mats, { cast: false });
-    noReflect.push(...meshes);
-    group.add(...meshes);
+    group.add(instanced(use, lists, mats, { tag: 'herbs', full: 9, zero: 20 }, 24));
   });
 
   // --- Fallen sticks --------------------------------------------------------------------
   const sticks = [];
   tries = 0;
-  while (sticks.length < (hi ? 170 : 60) && tries++ < 5000) {
+  while (sticks.length < Math.round(170 * K) && tries++ < 5000) {
     const a = r() * 6.283, d = Math.pow(r(), 0.7) * 38;
     const x = -0.5 + Math.cos(a) * d, z = 1 + Math.sin(a) * d;
     if (bankE(x, z) < 0.4 || nearRock(x, z, 0) || nearHero(x, z, 0.6)) continue;
@@ -188,15 +185,15 @@ export function createGroundCover(quality) {
     const mat = new THREE.MeshStandardMaterial({ map: tex(A(`${d}/diff.jpg`), o), normalMap: tex(A(`${d}/nor.jpg`), { ...o, srgb: false }), roughness: 0.9, metalness: 0 });
     underwater(mat); dapple(mat);
     const lists = variants.map(() => []);
-    sticks.forEach((k, i) => lists[i % variants.length].push(k));
-    const meshes = instanced(variants, lists, { mat, depth: null });
-    group.add(...meshes);
+    variants = variants.slice(0, 1);
+    sticks.forEach((k, i) => lists[0].push(k));
+    group.add(instanced(variants, lists, { mat, depth: null }, { tag: 'sticks', full: 18, zero: 40 }, 32));
   });
 
   // --- Leaf litter: small, weathered beech leaves. They drift into the hollows and along the edges of the
   // trail, lie curled, crumpled or half trodden in, and a few have sunk onto the stream bed by the banks.
   const litter = new Instances();
-  const litterTarget = hi ? 52000 : 13000;
+  const litterTarget = Math.round(40000 * K);
   const nrm = new THREE.Vector3(), dir = new THREE.Vector3(), side = new THREE.Vector3(), X = new THREE.Vector3(), Z = new THREE.Vector3();
   let n = 0; tries = 0;
   while (n < litterTarget && tries++ < litterTarget * 14) {
@@ -232,13 +229,10 @@ export function createGroundCover(quality) {
     litter.add(m4, c[0] * v, c[1] * v, c[2] * v, 0, 0, Math.floor(r() * 4));
     n++;
   }
-  const lm = litter.build(leafGeometry(), litterMaterials(), { castShadow: false });
-  lm.frustumCulled = false;
-  noReflect.push(lm);
+  const lm = litter.build(leafGeometry({ petiole: false, flat: true }), litterMaterials(), { cell: 24, lod: { tag: 'litter', full: 12, zero: 30, min: 0 } });
   group.add(lm);
 
   for (const [fx, fz, fs] of [[-3.7, -9.5, 1.5], [-3.0, -10.4, 1.2], [-4.4, -10.3, 1.3], [-3.4, -11.3, 1.0]]) addFern(fx, fz, fs);   // fern clump by the far-bank viewpoint
   group.userData.contacts = contacts;
-  group.userData.noReflect = noReflect;
   return group;
 }

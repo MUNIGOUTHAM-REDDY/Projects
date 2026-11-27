@@ -12,13 +12,14 @@ import { createRocks } from './rocks.js';
 import { createFallingLeaves } from './leaves.js';
 import { createMotes, createSky, FOG_COLOR } from './atmosphere.js';
 import { createPipeline } from './post.js';
-import { setDetail } from './foliage.js';
+import { setDetail, updateChunks, setShadowArea, chunkStats } from './chunks.js';
+import { TIER, QUALITY, IS_TOUCH } from './tier.js';
 import { modelJobs } from './models.js';
 
 const params = new URLSearchParams(location.search);
 const STILL = params.has('still');
-const isMobile = matchMedia('(pointer: coarse)').matches;
-const quality = params.get('q') || (isMobile ? 'low' : 'high');
+const isMobile = IS_TOUCH || TIER.name === 'mobile';
+const quality = TIER.name;
 const flag = (k) => params.get(k) !== '0';
 
 // --- Renderer -------------------------------------------------------------
@@ -26,7 +27,7 @@ const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: STILL });
 const SS = Number(params.get('ss') || 0);
 // Phones have dense screens but weak GPUs: render at a steady 1.5x there rather than starting high and collapsing.
-renderer.setPixelRatio(SS || Math.min(devicePixelRatio, isMobile ? 1.5 : quality === 'low' ? 1.25 : 1.75));
+renderer.setPixelRatio(SS || Math.min(devicePixelRatio, TIER.pixelRatio));
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = Number(params.get('exp') || 1.22);
@@ -45,13 +46,14 @@ const sun = new THREE.DirectionalLight(SUN_COLOR, Number(params.get('sun') || 11
 const sunTarget = new THREE.Object3D();
 sunTarget.position.set(-0.5, 0, -1.5);
 G.uShadowCentre.value.copy(sunTarget.position);
-const SHADOW_HALF = quality === 'low' ? 24 : 30;
+const SHADOW_HALF = TIER.shadowHalf;
+setShadowArea(sunTarget.position.x, sunTarget.position.z, SHADOW_HALF);
 G.uShadowRadius.value = SHADOW_HALF;
 scene.add(sunTarget);
 sun.target = sunTarget;
 sun.position.copy(sunTarget.position).addScaledVector(G.uSunDir.value, 80);
 sun.castShadow = true;
-sun.shadow.mapSize.setScalar(quality === 'low' ? 2048 : 4096);
+sun.shadow.mapSize.setScalar(TIER.shadowSize);
 const sc = sun.shadow.camera;
 sc.left = -SHADOW_HALF; sc.right = SHADOW_HALF; sc.top = SHADOW_HALF; sc.bottom = -SHADOW_HALF; sc.near = 20; sc.far = 150;
 sun.shadow.bias = -0.0004;
@@ -69,7 +71,7 @@ const splat = buildSplat([...(trees.userData.contacts || []), ...(cover.userData
 const terrain = createTerrain(quality, splat);
 const water = createWater(quality, sun);
 const falling = createFallingLeaves(quality);
-const motes = createMotes(quality === 'low' ? 300 : 700);
+const motes = createMotes(TIER.name === 'high' ? 600 : TIER.name === 'low' ? 300 : 120);
 const sky = createSky();
 {
   // Image-based light from a canopy-filtered sky, so shade picks up green forest light.
@@ -81,11 +83,13 @@ const sky = createSky();
   pmrem.dispose();
 }
 scene.add(sky, terrain, water, trees, rocks, cover, falling, motes);
-excludeFromReflection(water, [motes, falling, cover.userData.noReflect, trees.userData.noReflect, rocks.userData.noReflect], trees.userData.thinned);
+excludeFromReflection(water, [motes, falling], STILL);
+// The far ring of trees is grown after the first frames (all at once for a still capture).
+trees.userData.stream(STILL);
 
 const pipeline = createPipeline({ renderer, scene, camera, water, sun, quality, still: STILL });
-pipeline.scenePass.ao = flag('ao');
-pipeline.scenePass.volumetrics = flag('vol');
+if (!flag('ao')) pipeline.scenePass.ao = false;
+if (!flag('vol')) pipeline.scenePass.volumetrics = false;
 if (!flag('dof') || isMobile) pipeline.scenePass.dof = false;
 // Film grain reads as noise/shimmer on small, lower-resolution phone renders.
 if (isMobile) pipeline.grade.uniforms.uGrain.value = 0.0;
@@ -243,6 +247,7 @@ function renderFrame(dt) {
   controls.update(dt);
   keepAboveGround();
   if (!STILL) falling.userData.update(dt, G.uTime.value, false, camera, controls.target);
+  updateChunks(camera, G.uTime.value, STILL);
   const cu = pipeline.scenePass.compMat.uniforms;
   // Presets carry a focus distance; when exploring freely, focus on the orbit target and ease the blur off.
   const want = focus > 0 ? focus : camera.position.distanceTo(controls.target);
@@ -253,7 +258,7 @@ function renderFrame(dt) {
 // Dynamic resolution: if the GPU cannot hold a smooth frame rate, trade pixels for it (and take them back when it can).
 // Sharpness matters more than foliage density, so foliage is thinned first and resolution has a high floor.
 // Resolution only ever steps down (never back up), so the image doesn't pulse between sharp and soft.
-const PR_MAX = renderer.getPixelRatio(), PR_MIN = Math.min(PR_MAX, isMobile ? 1.0 : 0.75);
+const PR_MAX = renderer.getPixelRatio(), PR_MIN = Math.min(PR_MAX, TIER.prMin);
 const DETAIL_MIN = isMobile ? 0.25 : 0.45;
 let ema = 1 / 60, sinceAdjust = 0, detail = 1;
 function adapt(raw) {
@@ -268,9 +273,9 @@ function adapt(raw) {
 function loop() {
   const raw = clock.getDelta();
   const dt = Math.min(0.05, raw);
-  if (ready && !STILL) { renderFrame(dt); if (document.visibilityState === 'visible' && raw < 2) adapt(raw); }
+  if (ready && !STILL) { renderFrame(dt); if (document.visibilityState === 'visible' && raw < 2 && flag('adapt')) adapt(raw); }
   requestAnimationFrame(loop);
 }
 loop();
 
-window.__scene = { scene, camera, controls, renderer, trees, setPreset, pipeline, sun };
+window.__scene = { THREE, scene, camera, controls, renderer, trees, setPreset, pipeline, sun, water, chunkStats, updateChunks, tier: TIER };
