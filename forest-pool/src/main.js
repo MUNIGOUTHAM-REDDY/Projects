@@ -25,7 +25,8 @@ const flag = (k) => params.get(k) !== '0';
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: STILL });
 const SS = Number(params.get('ss') || 0);
-renderer.setPixelRatio(SS || Math.min(devicePixelRatio, quality === 'low' ? 1.25 : 1.75));
+// Phones have dense screens but weak GPUs: render at a steady 1.5x there rather than starting high and collapsing.
+renderer.setPixelRatio(SS || Math.min(devicePixelRatio, isMobile ? 1.5 : quality === 'low' ? 1.25 : 1.75));
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = Number(params.get('exp') || 1.22);
@@ -85,7 +86,9 @@ excludeFromReflection(water, [motes, falling, cover.userData.noReflect, trees.us
 const pipeline = createPipeline({ renderer, scene, camera, water, sun, quality, still: STILL });
 pipeline.scenePass.ao = flag('ao');
 pipeline.scenePass.volumetrics = flag('vol');
-if (!flag('dof')) pipeline.scenePass.dof = false;
+if (!flag('dof') || isMobile) pipeline.scenePass.dof = false;
+// Film grain reads as noise/shimmer on small, lower-resolution phone renders.
+if (isMobile) pipeline.grade.uniforms.uGrain.value = 0.0;
 
 // --- Camera presets & controls -------------------------------------------
 const PRESETS = {
@@ -248,21 +251,19 @@ function renderFrame(dt) {
   pipeline.render(dt, G.uTime.value);
 }
 // Dynamic resolution: if the GPU cannot hold a smooth frame rate, trade pixels for it (and take them back when it can).
-const PR_MAX = renderer.getPixelRatio(), PR_MIN = Math.min(PR_MAX, 0.6);
+// Sharpness matters more than foliage density, so foliage is thinned first and resolution has a high floor.
+// Resolution only ever steps down (never back up), so the image doesn't pulse between sharp and soft.
+const PR_MAX = renderer.getPixelRatio(), PR_MIN = Math.min(PR_MAX, isMobile ? 1.0 : 0.75);
+const DETAIL_MIN = isMobile ? 0.25 : 0.45;
 let ema = 1 / 60, sinceAdjust = 0, detail = 1;
 function adapt(raw) {
   ema += (raw - ema) * 0.05;
-  if (++sinceAdjust < 45) return;
+  if (++sinceAdjust < 60) return;
+  if (ema <= 1 / 28) return;
   const pr = renderer.getPixelRatio();
-  let next = pr;
-  if (ema > 1 / 30) {
-    // too slow: first thin the instanced foliage (it dominates the triangle count), then shed pixels
-    if (detail > 0.45) { detail = Math.max(0.45, detail - 0.15); setDetail(detail); sinceAdjust = 0; ema = 1 / 40; return; }
-    if (pr > PR_MIN) next = Math.max(PR_MIN, pr * 0.85);
-  } else if (ema < 1 / 52) {
-    if (pr < PR_MAX) next = Math.min(PR_MAX, pr * 1.08);
-  }
-  if (next !== pr) { renderer.setPixelRatio(next); resize(); sinceAdjust = 0; }
+  // too slow: first thin the instanced foliage (it dominates the triangle count), then shed pixels
+  if (detail > DETAIL_MIN) { detail = Math.max(DETAIL_MIN, detail - 0.15); setDetail(detail); sinceAdjust = 0; ema = 1 / 40; return; }
+  if (pr > PR_MIN) { renderer.setPixelRatio(Math.max(PR_MIN, pr * 0.85)); resize(); sinceAdjust = 0; ema = 1 / 40; }
 }
 function loop() {
   const raw = clock.getDelta();
