@@ -45,6 +45,7 @@ export function buildChunks(geometry, material, data, { cell = 16, lod = {}, dep
   const group = new THREE.Group();
   const { n, M, C, attrs = {}, key = null } = data;
   if (!n) return group;
+  cell *= TIER.cellScale;                       // weaker devices: fewer, larger batches
   const cells = new Map();
   for (let i = 0; i < n; i++) {
     const k = Math.floor(M[i * 16 + 12] / cell) + ',' + Math.floor(M[i * 16 + 14] / cell);

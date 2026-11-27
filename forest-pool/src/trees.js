@@ -359,7 +359,7 @@ function growHero(mains, r, out, tint, { branchCount = 14, twigDensity = 1 } = {
       for (const b2 of l2) {
         // leaves deep inside the crown sit in the shade of the shell
         const shade = outer1 * (0.48 + 0.58 * b2.tp);
-        if (TIER.twigs > 0 || (twigN % 2)) out.twigs.push(tube(b2, { radial: 3, barkTile: 0.5 }));
+        if (TIER.twigs > 0 || (twigN % 3) === 0) out.twigs.push(tube(b2, { radial: 3, barkTile: 0.5 }));
         const l3 = sprout(b2, { count: Math.max(1, b2.path.L * 8.5 * twigDensity), t0: 0.15, t1: 0.92, angle: [30, 62], len: (t, p) => Math.min(0.5, 0.16 + p.path.L * 0.45), rRatio: 0.6, rTip: 0.002, droop: 0.35, planar: true, wiggle: 0.18, segs: 3, flex: 0.03 }, r);
         for (const tw of l3) { if ((twigN++ % 10) < TIER.twigs * 10) out.twigs.push(tube(tw, { radial: 3, barkTile: 0.5 })); leafTwig(tw, out.leaves, r, tint, { shade: shade * (0.85 + 0.2 * tw.tp) }); }
         leafTwig(b2, out.leaves, r, tint, { from: 0.45, shade });
@@ -671,7 +671,8 @@ export function createTrees() {
     const cells = new Map();
     for (const g of geos) {
       const at = g.userData.at;
-      const k = cell && at ? Math.floor(at.x / cell) + ',' + Math.floor(at.z / cell) : 'all';
+      const cs = cell * TIER.cellScale;
+      const k = cell && at ? Math.floor(at.x / cs) + ',' + Math.floor(at.z / cs) : 'all';
       let a = cells.get(k); if (!a) cells.set(k, (a = []));
       a.push(g);
     }

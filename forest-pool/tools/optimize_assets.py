@@ -31,7 +31,10 @@ def save(im, rel, size, q):
     for sub, scale in (('', 1.0), ('m/', 0.5)):
         dst = os.path.join(OUT, sub + os.path.splitext(rel)[0] + '.webp')
         os.makedirs(os.path.dirname(dst), exist_ok=True)
-        s = max(256, int(size * scale)) if sub else size
+        s = size
+        if sub:      # phones: half size, diffuse maps at most 512, normal/roughness maps and small props at most 256
+            s = max(256, int(size * scale))
+            if 'atlas' not in rel and '_all' not in rel: s = min(s, 256 if any(k in rel for k in ('nor', 'rough', 'water_n', 'foam', 'dead_tree', 'tree_stump', 'mossy_rock', 'dry_branches', 'grass_', 'celandine', 'sand', 'mud')) else 512)
         w, h = im.size
         k = min(1.0, s / max(w, h))
         o = im if k >= 1 else im.resize((max(1, round(w * k)), max(1, round(h * k))), Image.LANCZOS)

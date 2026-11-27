@@ -57,7 +57,7 @@ export function createGroundCover() {
     for (let i = 0; i < 9; i++) { const a = r() * 6.283, d = 0.8 + r() * 1.5; addFern(h.x + Math.cos(a) * d, h.z + Math.sin(a) * d, 0.8 + r() * 0.8); }
   }
   let tries = 0;
-  const fernTarget = Math.round(520 * Math.max(K, 0.4));
+  const fernTarget = Math.round(520 * TIER.ferns);
   while (ferns.length < fernTarget && tries++ < 20000) {
     const a = r() * 6.283, d = 2 + Math.pow(r(), 0.8) * 46;
     const x = -1 + Math.cos(a) * d, z = -3 + Math.sin(a) * d;
@@ -75,7 +75,7 @@ export function createGroundCover() {
       const hero = TIER.name !== 'mobile' && (Math.hypot(f.x - 0.6, f.z - 6.0) < 6 || Math.hypot(f.x - 1.0, f.z - 2.5) < 4);
       const set = h < (hero ? 0.7 : TIER.fernBig) && big.length ? big : small; lists[set[i % set.length]].push(f); });
     const mats = plantMaterials('fern_02', { amount: 0.05, flutter: 0.006, tint: [0.62, 0.78, 0.42] });
-    group.add(instanced(variants, lists, mats, { tag: 'ferns', full: 18, zero: 36, min: 0, shadow: 0.25, mirror: 0 }, 32));
+    group.add(instanced(variants, lists, mats, { tag: 'ferns', full: 18, zero: 36, min: 0, shadow: TIER.plantShadows ? 0.25 : 0, mirror: 0 }, 32));
   });
 
   // --- Grass tufts: along the banks, the trail's shoulders and in brighter gaps ---------
@@ -97,7 +97,7 @@ export function createGroundCover() {
     grass.push({ x, z, y: heightAt(x, z) - 0.015, s: 0.8 + r() * 0.8 + smoothstep(1.5, 0.1, e2) * 0.35, sy: 0.8 + r() * 0.5, rot: r() * 6.283, tx: (r() - 0.5) * 0.2, tz: (r() - 0.5) * 0.2, c: [v * (0.85 + dry * 0.25), v * 0.95, v * (0.6 + r() * 0.25)] });
   }
   // Bank-edge sedge and grass: rooted on the lip of the bank and bowing out over the water, breaking the shoreline.
-  const edgeTarget = Math.round(1100 * K);
+  const edgeTarget = Math.round(1100 * (TIER.name === 'mobile' ? 0.1 : K));
   const yaw = new THREE.Quaternion(), tilt = new THREE.Quaternion(), axis = new THREE.Vector3();
   tries = 0; let nEdge = 0;
   while (nEdge < edgeTarget && tries++ < edgeTarget * 40) {
