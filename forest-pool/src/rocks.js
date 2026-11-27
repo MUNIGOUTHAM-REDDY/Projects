@@ -68,7 +68,7 @@ function rockMaterial(set) {
 }
 
 function pebbleGeometry(seed) {
-  let g = new THREE.IcosahedronGeometry(1, 1);
+  let g = new THREE.IcosahedronGeometry(1, TIER.name === 'mobile' ? 0 : 1);
   g.deleteAttribute('uv'); g.deleteAttribute('normal');
   g = mergeVertices(g);
   const p = g.attributes.position, v = new THREE.Vector3();
@@ -133,13 +133,13 @@ export function createRocks() {
     for (const c of cells.values()) {
       const mesh = new THREE.Mesh(mergeGeometries(c.geos), c.mat);
       mesh.receiveShadow = true;
-      registerMesh(mesh, { tag: 'rocks', shadow: 1, mirror: 1, mirrorDist: 45, full: 160, zero: 160 });
+      registerMesh(mesh, { tag: 'rocks', shadow: 1, mirror: TIER.name === 'mobile' ? 0 : 1, mirrorDist: 45, full: 160, zero: 160 });
       group.add(mesh);
     }
   });
 
   // Cobbles and pebbles: thick along the waterline and on the gravel bars, scattered over the riffles.
-  const count = Math.round(5200 * Math.max(TIER.count, 0.35));
+  const count = Math.round(5200 * TIER.pebbles);
   const geos = [pebbleGeometry(1.3)];
   const mat = pebbleMaterial();
   const per = geos.map(() => []);

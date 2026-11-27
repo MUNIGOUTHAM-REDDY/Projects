@@ -19,6 +19,8 @@ export function setDetail(f) { detail = f; lastT = -1; }
 //   shadow / mirror: fraction drawn into the shadow map / the water reflection (0 = not at all)
 function register(mesh, centre, radius, lod, n) {
   const c = { mesh, centre, radius, lod: { full: 1e9, zero: 1e9, min: 0, shadow: 0, mirror: 0, mirrorDist: 1e9, adaptive: false, ...lod }, n, frac: -1, live: n, d: 0 };
+  if (mesh.isInstancedMesh) c.lod.mirror *= TIER.mirrorK;
+  if (!TIER.foliageShadows && c.lod.adaptive) c.lod.shadow = 0;      // phones: the canopy gobo stands in for leaf shadows
   c.lod.full *= TIER.dist; c.lod.zero *= TIER.dist; if (c.lod.mirrorDist < 1e8) c.lod.mirrorDist *= TIER.dist;
   mesh.userData.chunk = c; mesh.userData.tag = c.lod.tag || 'chunk';
   // only chunks inside the sun's shadow box ever cast

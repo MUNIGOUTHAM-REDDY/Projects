@@ -80,7 +80,7 @@ export function createGroundCover() {
 
   // --- Grass tufts: along the banks, the trail's shoulders and in brighter gaps ---------
   const grass = [];
-  const grassTarget = Math.round(800 * K);
+  const grassTarget = Math.round(800 * (TIER.name === 'mobile' ? 0.1 : K));
   tries = 0;
   while (grass.length < grassTarget && tries++ < 60000) {
     const a = r() * 6.283, d = Math.pow(r(), 0.85) * 26;
@@ -121,7 +121,7 @@ export function createGroundCover() {
   }
 
   const fuzz = [];
-  const fuzzTarget = Math.round(7000 * K);
+  const fuzzTarget = Math.round(7000 * TIER.fuzz);
   tries = 0;
   while (fuzz.length < fuzzTarget && tries++ < fuzzTarget * 8) {
     const a = r() * 6.283, d = Math.pow(r(), 0.75) * 17;
